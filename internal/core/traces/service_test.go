@@ -2,6 +2,7 @@ package traces
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -84,22 +85,19 @@ func TestList_DefaultLimitAndDecode(t *testing.T) {
 		t.Fatalf("Path = %q, want %q", doer.req.Path, "/runs/query")
 	}
 
-	body, ok := doer.req.Body.(map[string]any)
-	if !ok {
-		t.Fatalf("Body type = %T, want map[string]any", doer.req.Body)
+	var body queryRunsRequest
+	if err := json.Unmarshal(doer.req.Body, &body); err != nil {
+		t.Fatalf("json.Unmarshal(request body) error = %v", err)
 	}
 
-	session, ok := body["session"].([]string)
-	if !ok || len(session) != 1 || session[0] != "project-123" {
-		t.Fatalf("session = %#v, want []string{\"project-123\"}", body["session"])
+	if len(body.Session) != 1 || body.Session[0] != "project-123" {
+		t.Fatalf("Session = %#v, want []string{\"project-123\"}", body.Session)
 	}
-	isRoot, ok := body["is_root"].(bool)
-	if !ok || !isRoot {
-		t.Fatalf("is_root = %#v, want true", body["is_root"])
+	if !body.IsRoot {
+		t.Fatalf("IsRoot = %v, want true", body.IsRoot)
 	}
-	limit, ok := body["limit"].(int)
-	if !ok || limit != 20 {
-		t.Fatalf("limit = %#v, want 20", body["limit"])
+	if body.Limit != 20 {
+		t.Fatalf("Limit = %d, want 20", body.Limit)
 	}
 }
 
@@ -125,13 +123,12 @@ func TestList_UsesExplicitLimit(t *testing.T) {
 		t.Fatalf("List() error = %v", err)
 	}
 
-	body, ok := doer.req.Body.(map[string]any)
-	if !ok {
-		t.Fatalf("Body type = %T, want map[string]any", doer.req.Body)
+	var body queryRunsRequest
+	if err := json.Unmarshal(doer.req.Body, &body); err != nil {
+		t.Fatalf("json.Unmarshal(request body) error = %v", err)
 	}
-	limit, ok := body["limit"].(int)
-	if !ok || limit != 5 {
-		t.Fatalf("limit = %#v, want 5", body["limit"])
+	if body.Limit != 5 {
+		t.Fatalf("Limit = %d, want 5", body.Limit)
 	}
 }
 

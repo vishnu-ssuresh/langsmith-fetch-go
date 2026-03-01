@@ -25,6 +25,12 @@ type ListParams struct {
 	Limit     int
 }
 
+type queryRunsRequest struct {
+	Session []string `json:"session"`
+	IsRoot  bool     `json:"is_root"`
+	Limit   int      `json:"limit"`
+}
+
 // Summary is the minimal trace information returned by List.
 type Summary struct {
 	ID        string `json:"id"`
@@ -51,16 +57,20 @@ func (s *Service) List(ctx context.Context, params ListParams) ([]Summary, error
 		limit = 20
 	}
 
-	body := map[string]any{
-		"session": []string{params.ProjectID},
-		"is_root": true,
-		"limit":   limit,
+	body := queryRunsRequest{
+		Session: []string{params.ProjectID},
+		IsRoot:  true,
+		Limit:   limit,
+	}
+	bodyBytes, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("traces: marshal request body: %w", err)
 	}
 
 	resp, err := s.doer.Do(ctx, transport.Request{
 		Method: http.MethodPost,
 		Path:   "/runs/query",
-		Body:   body,
+		Body:   bodyBytes,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("traces: query traces: %w", err)
