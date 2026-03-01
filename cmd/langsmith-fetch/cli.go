@@ -1,10 +1,15 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+
+	"langsmith-fetch-go/internal/app"
+	"langsmith-fetch-go/internal/core/traces"
 )
 
 type tracesOptions struct {
@@ -13,6 +18,12 @@ type tracesOptions struct {
 	limit     int
 	format    string
 }
+
+type tracesLister interface {
+	List(context.Context, traces.ListParams) ([]traces.Summary, error)
+}
+
+var newTracesLister = defaultNewTracesLister
 
 func execute(args []string, stdout io.Writer, stderr io.Writer) error {
 	if len(args) == 0 {
@@ -56,7 +67,49 @@ func runTraces(args []string, stdout io.Writer, stderr io.Writer) error {
 		return fmt.Errorf("--format must be one of pretty|json|raw, got %q", opts.format)
 	}
 
-	fmt.Fprintf(stdout, "traces command parsed (project_id=%s limit=%d format=%s)\n", opts.projectID, opts.limit, opts.format)
+	lister, err := newTracesLister()
+	if err != nil {
+		return fmt.Errorf("initialize traces service: %w", err)
+	}
+
+	runs, err := lister.List(context.Background(), traces.ListParams{
+		ProjectID: opts.projectID,
+		Limit:     opts.limit,
+	})
+	if err != nil {
+		return fmt.Errorf("list traces: %w", err)
+	}
+
+	switch opts.format {
+	case "json", "raw":
+		enc := json.NewEncoder(stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(runs)
+	case "pretty":
+		return printTracesPretty(stdout, runs)
+	default:
+		return fmt.Errorf("unsupported format %q", opts.format)
+	}
+}
+
+func defaultNewTracesLister() (tracesLister, error) {
+	client, err := app.NewClientFromEnv()
+	if err != nil {
+		return nil, err
+	}
+	return traces.New(client)
+}
+
+func printTracesPretty(w io.Writer, runs []traces.Summary) error {
+	if len(runs) == 0 {
+		fmt.Fprintln(w, "No traces found.")
+		return nil
+	}
+	for _, run := range runs {
+		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\n", run.ID, run.Name, run.StartTime); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -67,5 +120,5 @@ func printRootUsage(w io.Writer) {
 	fmt.Fprintln(w, "  langsmith-fetch <command> [flags]")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Commands:")
-	fmt.Fprintln(w, "  traces    List traces (skeleton)")
+	fmt.Fprintln(w, "  traces    List traces")
 }
