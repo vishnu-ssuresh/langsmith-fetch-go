@@ -24,6 +24,8 @@ func runWithArgs(args []string) error {
 	if cfg.APIKey == "" {
 		return errors.New("LANGSMITH_API_KEY (or LANGCHAIN_API_KEY) is required")
 	}
-
-	return execute(args, os.Stdout, os.Stderr)
+	if len(args) > 0 {
+		return fmt.Errorf("commands temporarily unavailable during CLI refactor: %q", args[0])
+	}
+	return nil
 }
