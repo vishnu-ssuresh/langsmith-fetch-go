@@ -3,7 +3,7 @@ package client
 import (
 	"time"
 
-	langsmith "github.com/vishnu-ssuresh/langsmith-sdk/go/langsmith"
+	langsmith "langsmith-sdk/go/langsmith"
 )
 
 // DefaultUserAgent identifies requests from langsmith-fetch-go.
