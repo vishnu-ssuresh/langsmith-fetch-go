@@ -1,11 +1,10 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"os"
 
-	"langsmith-fetch-go/internal/config"
+	internalcmd "langsmith-fetch-go/internal/cmd"
 )
 
 func main() {
@@ -20,12 +19,5 @@ func run() error {
 }
 
 func runWithArgs(args []string) error {
-	cfg := config.LoadFromEnv()
-	if cfg.APIKey == "" {
-		return errors.New("LANGSMITH_API_KEY (or LANGCHAIN_API_KEY) is required")
-	}
-	if len(args) > 0 {
-		return fmt.Errorf("commands temporarily unavailable during CLI refactor: %q", args[0])
-	}
-	return nil
+	return internalcmd.Execute(args, os.Stdout, os.Stderr, internalcmd.NewDeps())
 }
