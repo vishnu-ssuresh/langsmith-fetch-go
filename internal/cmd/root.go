@@ -27,7 +27,9 @@ func Execute(args []string, stdout io.Writer, stderr io.Writer, deps Deps) error
 	case "-h", "--help", "help":
 		printRootUsage(stdout)
 		return nil
-	case "trace", "traces", "thread", "threads", "config":
+	case "traces":
+		return runTraces(args[1:], stdout, stderr, deps, cfg)
+	case "trace", "thread", "threads", "config":
 		return fmt.Errorf("command %q not implemented yet", args[0])
 	default:
 		return fmt.Errorf("unknown command %q", args[0])

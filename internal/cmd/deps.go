@@ -1,25 +1,45 @@
 package cmd
 
-import "langsmith-fetch-go/internal/config"
+import (
+	langsmith "langsmith-sdk/go/langsmith"
+
+	"langsmith-fetch-go/internal/config"
+	"langsmith-fetch-go/internal/core/traces"
+)
 
 // Deps contains root command dependencies.
 //
 // Keeping these as function fields makes command code easy to unit test
 // without real process environment access.
 type Deps struct {
-	LoadConfig func() config.Values
+	LoadConfig      func() config.Values
+	NewTracesLister func(config.Values) (tracesLister, error)
 }
 
 // NewDeps returns production command dependencies.
 func NewDeps() Deps {
 	return Deps{
 		LoadConfig: config.LoadFromEnv,
+		NewTracesLister: func(cfg config.Values) (tracesLister, error) {
+			client, err := langsmith.NewClient(langsmith.ClientOptions{
+				APIKey:      cfg.APIKey,
+				WorkspaceID: cfg.WorkspaceID,
+				Endpoint:    cfg.Endpoint,
+			})
+			if err != nil {
+				return nil, err
+			}
+			return traces.New(client)
+		},
 	}
 }
 
 func (d Deps) withDefaults() Deps {
 	if d.LoadConfig == nil {
 		d.LoadConfig = config.LoadFromEnv
+	}
+	if d.NewTracesLister == nil {
+		d.NewTracesLister = NewDeps().NewTracesLister
 	}
 	return d
 }
