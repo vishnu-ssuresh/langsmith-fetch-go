@@ -3,7 +3,6 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -11,6 +10,7 @@ import (
 
 	"langsmith-fetch-go/internal/config"
 	coretraces "langsmith-fetch-go/internal/core/traces"
+	"langsmith-fetch-go/internal/output"
 )
 
 type tracesOptions struct {
@@ -62,29 +62,5 @@ func runTraces(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cfg
 	if err != nil {
 		return fmt.Errorf("list traces: %w", err)
 	}
-
-	switch opts.format {
-	case "json", "raw":
-		enc := json.NewEncoder(stdout)
-		enc.SetIndent("", "  ")
-		return enc.Encode(runs)
-	case "pretty":
-		return printTracesPretty(stdout, runs)
-	default:
-		return fmt.Errorf("unsupported format %q", opts.format)
-	}
-}
-
-func printTracesPretty(w io.Writer, runs []coretraces.Summary) error {
-	if len(runs) == 0 {
-		fmt.Fprintln(w, "No traces found.")
-		return nil
-	}
-
-	for _, run := range runs {
-		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\n", run.ID, run.Name, run.StartTime); err != nil {
-			return err
-		}
-	}
-	return nil
+	return output.WriteTraceSummaries(stdout, opts.format, runs)
 }

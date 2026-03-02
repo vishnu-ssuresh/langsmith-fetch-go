@@ -3,15 +3,14 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
-	"strings"
 
 	"langsmith-fetch-go/internal/config"
 	corethreads "langsmith-fetch-go/internal/core/threads"
+	"langsmith-fetch-go/internal/output"
 )
 
 type threadsOptions struct {
@@ -63,38 +62,5 @@ func runThreads(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cf
 	if err != nil {
 		return fmt.Errorf("list threads: %w", err)
 	}
-
-	switch opts.format {
-	case "json", "raw":
-		enc := json.NewEncoder(stdout)
-		enc.SetIndent("", "  ")
-		return enc.Encode(threads)
-	case "pretty":
-		return printThreadsPretty(stdout, threads)
-	default:
-		return fmt.Errorf("unsupported format %q", opts.format)
-	}
-}
-
-func printThreadsPretty(w io.Writer, threads []corethreads.ThreadData) error {
-	if len(threads) == 0 {
-		fmt.Fprintln(w, "No threads found.")
-		return nil
-	}
-
-	for _, thread := range threads {
-		if _, err := fmt.Fprintf(w, "Thread: %s\n", thread.ThreadID); err != nil {
-			return err
-		}
-		for i, message := range thread.Messages {
-			line := strings.TrimSpace(string(message))
-			if _, err := fmt.Fprintf(w, "  [%d] %s\n", i+1, line); err != nil {
-				return err
-			}
-		}
-		if _, err := fmt.Fprintln(w); err != nil {
-			return err
-		}
-	}
-	return nil
+	return output.WriteThreadList(stdout, opts.format, threads)
 }
