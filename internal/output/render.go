@@ -106,7 +106,14 @@ func writePrettyTraceSummaries(w io.Writer, runs []coretraces.Summary) error {
 	}
 
 	for _, run := range runs {
-		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\n", run.ID, run.Name, run.StartTime); err != nil {
+		line := fmt.Sprintf("%s\t%s\t%s", run.ID, run.Name, run.StartTime)
+		if run.Metadata != nil && run.Metadata.Status != "" {
+			line += fmt.Sprintf("\tstatus:%s", run.Metadata.Status)
+		}
+		if len(run.Feedback) > 0 {
+			line += fmt.Sprintf("\tfeedback:%d", len(run.Feedback))
+		}
+		if _, err := fmt.Fprintln(w, line); err != nil {
 			return err
 		}
 	}

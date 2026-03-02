@@ -323,3 +323,31 @@ func TestRunTraces_RejectsMutuallyExclusiveTimeFlags(t *testing.T) {
 		t.Fatalf("runTraces() error = %v, want mutual exclusivity error", err)
 	}
 }
+
+func TestRunTraces_PassesIncludeFlags(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeTracesLister{runs: []coretraces.Summary{}}
+	err := runTraces(
+		[]string{
+			"--project-id", "project-123",
+			"--include-metadata",
+			"--include-feedback",
+		},
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		Deps{
+			NewTracesLister: func(config.Values) (tracesLister, error) { return fake, nil },
+		},
+		config.Values{APIKey: "test"},
+	)
+	if err != nil {
+		t.Fatalf("runTraces() error = %v", err)
+	}
+	if !fake.params.IncludeMetadata {
+		t.Fatal("IncludeMetadata = false, want true")
+	}
+	if !fake.params.IncludeFeedback {
+		t.Fatal("IncludeFeedback = false, want true")
+	}
+}

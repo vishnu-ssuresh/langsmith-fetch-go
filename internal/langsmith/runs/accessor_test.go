@@ -280,6 +280,15 @@ func TestGetRun_BuildsRequestAndDecodesResponse(t *testing.T) {
 			StatusCode: http.StatusOK,
 			Body: []byte(`{
   "id":"trace-1",
+  "status":"completed",
+  "start_time":"2026-01-01T00:00:00Z",
+  "end_time":"2026-01-01T00:00:02Z",
+  "prompt_tokens":11,
+  "total_tokens":22,
+  "total_cost":0.42,
+  "first_token_time":"2026-01-01T00:00:00.100Z",
+  "feedback_stats":{"correctness":1},
+  "extra":{"metadata":{"thread_id":"thread-1"}},
   "messages":[{"role":"user","content":"hi"}],
   "outputs":{"messages":[{"role":"assistant","content":"hello"}]}
 }`),
@@ -305,6 +314,21 @@ func TestGetRun_BuildsRequestAndDecodesResponse(t *testing.T) {
 	}
 	if len(run.Outputs.Messages) != 1 {
 		t.Fatalf("len(run.Outputs.Messages) = %d, want 1", len(run.Outputs.Messages))
+	}
+	if run.Status != "completed" {
+		t.Fatalf("run.Status = %q, want %q", run.Status, "completed")
+	}
+	if run.StartTime != "2026-01-01T00:00:00Z" || run.EndTime != "2026-01-01T00:00:02Z" {
+		t.Fatalf("start/end = %q/%q, want expected timestamps", run.StartTime, run.EndTime)
+	}
+	if run.PromptTokens == nil || *run.PromptTokens != 11 {
+		t.Fatalf("run.PromptTokens = %+v, want 11", run.PromptTokens)
+	}
+	if run.TotalCost == nil || *run.TotalCost != 0.42 {
+		t.Fatalf("run.TotalCost = %+v, want 0.42", run.TotalCost)
+	}
+	if string(run.Extra.Metadata) != `{"thread_id":"thread-1"}` {
+		t.Fatalf("run.Extra.Metadata = %s, want thread metadata", string(run.Extra.Metadata))
 	}
 	if doer.req.Method != http.MethodGet {
 		t.Fatalf("Method = %q, want GET", doer.req.Method)

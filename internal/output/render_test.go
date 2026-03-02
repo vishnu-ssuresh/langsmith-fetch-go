@@ -41,6 +41,32 @@ func TestWriteTraceSummaries_Pretty(t *testing.T) {
 	}
 }
 
+func TestWriteTraceSummaries_PrettyWithMetadataAndFeedback(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	err := WriteTraceSummaries(&out, "pretty", []coretraces.Summary{
+		{
+			ID:        "trace-1",
+			Name:      "hello",
+			StartTime: "2026-01-01T00:00:00Z",
+			Metadata: &coretraces.TraceMetadata{
+				Status: "completed",
+			},
+			Feedback: []coretraces.FeedbackItem{
+				{ID: "fb-1", RunID: "trace-1"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("WriteTraceSummaries() error = %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "status:completed") || !strings.Contains(got, "feedback:1") {
+		t.Fatalf("stdout = %q, want status and feedback counters", got)
+	}
+}
+
 func TestWriteThreadList_Pretty(t *testing.T) {
 	t.Parallel()
 

@@ -8,6 +8,7 @@ import (
 	coresingle "langsmith-fetch-go/internal/core/single"
 	corethreads "langsmith-fetch-go/internal/core/threads"
 	"langsmith-fetch-go/internal/core/traces"
+	langsmithfeedback "langsmith-fetch-go/internal/langsmith/feedback"
 	langsmithprojects "langsmith-fetch-go/internal/langsmith/projects"
 	langsmithruns "langsmith-fetch-go/internal/langsmith/runs"
 	langsmiththreads "langsmith-fetch-go/internal/langsmith/threads"
@@ -50,7 +51,11 @@ func NewDeps() Deps {
 			if err != nil {
 				return nil, err
 			}
-			return traces.New(runsAccessor)
+			feedbackAccessor, err := langsmithfeedback.NewAccessor(client)
+			if err != nil {
+				return nil, err
+			}
+			return traces.New(runsAccessor, feedbackAccessor)
 		},
 		NewThreadGetter: func(cfg config.Values) (threadGetter, error) {
 			client, err := newSDKClient(cfg)

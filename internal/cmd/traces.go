@@ -22,6 +22,8 @@ type tracesOptions struct {
 	limit           int
 	lastNMinutes    int
 	since           string
+	includeMetadata bool
+	includeFeedback bool
 	format          string
 	outputFile      string
 	outputDir       string
@@ -51,6 +53,18 @@ func runTraces(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cfg
 		"since",
 		"",
 		"Only fetch traces since RFC3339 timestamp (e.g., 2025-12-09T10:00:00Z)",
+	)
+	fs.BoolVar(
+		&opts.includeMetadata,
+		"include-metadata",
+		false,
+		"Include trace metadata fields",
+	)
+	fs.BoolVar(
+		&opts.includeFeedback,
+		"include-feedback",
+		false,
+		"Include trace feedback (extra API calls)",
 	)
 	fs.StringVar(
 		&opts.format,
@@ -92,9 +106,11 @@ func runTraces(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cfg
 	}
 
 	runs, err := lister.List(context.Background(), coretraces.ListParams{
-		ProjectID: projectID,
-		Limit:     opts.limit,
-		StartTime: startTime,
+		ProjectID:       projectID,
+		Limit:           opts.limit,
+		StartTime:       startTime,
+		IncludeMetadata: opts.includeMetadata,
+		IncludeFeedback: opts.includeFeedback,
 	})
 	if err != nil {
 		return fmt.Errorf("list traces: %w", err)

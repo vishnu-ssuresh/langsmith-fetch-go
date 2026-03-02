@@ -54,14 +54,31 @@ type Message = json.RawMessage
 
 // Run contains single-run fields used by fetch-go.
 type Run struct {
-	ID       string    `json:"id"`
-	Messages []Message `json:"messages"`
-	Outputs  Outputs   `json:"outputs"`
+	ID               string          `json:"id"`
+	Status           string          `json:"status"`
+	StartTime        string          `json:"start_time"`
+	EndTime          string          `json:"end_time"`
+	PromptTokens     *int            `json:"prompt_tokens"`
+	CompletionTokens *int            `json:"completion_tokens"`
+	TotalTokens      *int            `json:"total_tokens"`
+	PromptCost       *float64        `json:"prompt_cost"`
+	CompletionCost   *float64        `json:"completion_cost"`
+	TotalCost        *float64        `json:"total_cost"`
+	FirstTokenTime   string          `json:"first_token_time"`
+	FeedbackStats    json.RawMessage `json:"feedback_stats"`
+	Extra            Extra           `json:"extra"`
+	Messages         []Message       `json:"messages"`
+	Outputs          Outputs         `json:"outputs"`
 }
 
 // Outputs is the run output envelope.
 type Outputs struct {
 	Messages []Message `json:"messages"`
+}
+
+// Extra is the run extra envelope.
+type Extra struct {
+	Metadata json.RawMessage `json:"metadata"`
 }
 
 type queryRunsRequest struct {
