@@ -21,6 +21,7 @@ type Service struct {
 type ListParams struct {
 	ProjectID string
 	Limit     int
+	StartTime string
 }
 
 // Summary is the minimal trace information returned by List.
@@ -48,6 +49,7 @@ func (s *Service) List(ctx context.Context, params ListParams) ([]Summary, error
 	runs, err := s.runs.QueryRoot(ctx, langsmithruns.QueryRootParams{
 		ProjectID: params.ProjectID,
 		Limit:     limit,
+		StartTime: params.StartTime,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("traces: query traces: %w", err)

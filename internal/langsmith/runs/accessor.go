@@ -25,6 +25,7 @@ type Accessor struct {
 type QueryRootParams struct {
 	ProjectID string
 	Limit     int
+	StartTime string
 }
 
 // RootRun is the root-run shape needed for thread list construction.
@@ -64,9 +65,10 @@ type Outputs struct {
 }
 
 type queryRunsRequest struct {
-	Session []string `json:"session"`
-	IsRoot  bool     `json:"is_root"`
-	Limit   int      `json:"limit"`
+	Session   []string `json:"session"`
+	IsRoot    bool     `json:"is_root"`
+	Limit     int      `json:"limit"`
+	StartTime string   `json:"start_time,omitempty"`
 }
 
 // NewAccessor creates a runs accessor.
@@ -107,9 +109,10 @@ func (a *Accessor) QueryRootRuns(ctx context.Context, params QueryRootParams) ([
 	}
 
 	body := queryRunsRequest{
-		Session: []string{params.ProjectID},
-		IsRoot:  true,
-		Limit:   limit,
+		Session:   []string{params.ProjectID},
+		IsRoot:    true,
+		Limit:     limit,
+		StartTime: params.StartTime,
 	}
 	bodyBytes, err := transport.EncodeJSONBody(body)
 	if err != nil {

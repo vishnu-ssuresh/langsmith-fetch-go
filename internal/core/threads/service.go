@@ -36,6 +36,7 @@ type Lister struct {
 type ListParams struct {
 	ProjectID string
 	Limit     int
+	StartTime string
 }
 
 // ThreadData is the thread payload returned by bulk listing.
@@ -77,6 +78,7 @@ func (l *Lister) List(ctx context.Context, params ListParams) ([]ThreadData, err
 	runs, err := l.runs.QueryRootRuns(ctx, langsmithruns.QueryRootParams{
 		ProjectID: params.ProjectID,
 		Limit:     queryLimit,
+		StartTime: params.StartTime,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("threads: query root runs: %w", err)

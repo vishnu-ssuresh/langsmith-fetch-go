@@ -283,3 +283,43 @@ func TestRunTraces_ResolvesProjectName(t *testing.T) {
 		t.Fatalf("ProjectID = %q, want %q", fake.params.ProjectID, "resolved-project-id")
 	}
 }
+
+func TestRunTraces_PassesSinceFilter(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeTracesLister{runs: []coretraces.Summary{}}
+	err := runTraces(
+		[]string{"--project-id", "project-123", "--since", "2025-12-09T10:00:00Z"},
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		Deps{
+			NewTracesLister: func(config.Values) (tracesLister, error) { return fake, nil },
+		},
+		config.Values{APIKey: "test"},
+	)
+	if err != nil {
+		t.Fatalf("runTraces() error = %v", err)
+	}
+	if fake.params.StartTime != "2025-12-09T10:00:00Z" {
+		t.Fatalf("StartTime = %q, want %q", fake.params.StartTime, "2025-12-09T10:00:00Z")
+	}
+}
+
+func TestRunTraces_RejectsMutuallyExclusiveTimeFlags(t *testing.T) {
+	t.Parallel()
+
+	err := runTraces(
+		[]string{
+			"--project-id", "project-123",
+			"--last-n-minutes", "30",
+			"--since", "2025-12-09T10:00:00Z",
+		},
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		Deps{},
+		config.Values{APIKey: "test"},
+	)
+	if err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Fatalf("runTraces() error = %v, want mutual exclusivity error", err)
+	}
+}

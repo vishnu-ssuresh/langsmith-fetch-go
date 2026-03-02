@@ -134,6 +134,37 @@ func TestQueryRoot_UsesExplicitLimit(t *testing.T) {
 	}
 }
 
+func TestQueryRoot_IncludesStartTime(t *testing.T) {
+	t.Parallel()
+
+	doer := &fakeDoer{
+		resp: transport.Response{
+			StatusCode: 200,
+			Body:       []byte(`{"runs":[]}`),
+		},
+	}
+	accessor, err := NewAccessor(doer)
+	if err != nil {
+		t.Fatalf("NewAccessor() error = %v", err)
+	}
+
+	_, err = accessor.QueryRoot(context.Background(), QueryRootParams{
+		ProjectID: "project-123",
+		StartTime: "2025-12-09T10:00:00Z",
+	})
+	if err != nil {
+		t.Fatalf("QueryRoot() error = %v", err)
+	}
+
+	var body queryRunsRequest
+	if err := json.Unmarshal(doer.req.Body, &body); err != nil {
+		t.Fatalf("json.Unmarshal(request body) error = %v", err)
+	}
+	if body.StartTime != "2025-12-09T10:00:00Z" {
+		t.Fatalf("StartTime = %q, want %q", body.StartTime, "2025-12-09T10:00:00Z")
+	}
+}
+
 func TestQueryRoot_PropagatesDoError(t *testing.T) {
 	t.Parallel()
 

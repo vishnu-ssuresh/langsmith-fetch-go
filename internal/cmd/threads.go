@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"time"
 
 	"langsmith-fetch-go/internal/config"
 	corethreads "langsmith-fetch-go/internal/core/threads"
@@ -19,6 +20,8 @@ import (
 type threadsOptions struct {
 	projectID       string
 	limit           int
+	lastNMinutes    int
+	since           string
 	format          string
 	outputFile      string
 	outputDir       string
@@ -37,6 +40,18 @@ func runThreads(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cf
 	fs.StringVar(&opts.projectID, "project-id", "", "Project UUID")
 	fs.StringVar(&opts.projectID, "project-uuid", "", "Project UUID")
 	fs.IntVar(&opts.limit, "limit", 20, "Max threads to return")
+	fs.IntVar(
+		&opts.lastNMinutes,
+		"last-n-minutes",
+		unsetLastNMinutes,
+		"Only fetch threads from the last N minutes",
+	)
+	fs.StringVar(
+		&opts.since,
+		"since",
+		"",
+		"Only fetch threads since RFC3339 timestamp (e.g., 2025-12-09T10:00:00Z)",
+	)
 	fs.StringVar(
 		&opts.format,
 		"format",
@@ -66,6 +81,10 @@ func runThreads(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cf
 	if err != nil {
 		return err
 	}
+	startTime, err := parseStartTime(opts.lastNMinutes, opts.since, time.Now)
+	if err != nil {
+		return err
+	}
 
 	lister, err := deps.NewThreadsLister(cfg)
 	if err != nil {
@@ -75,6 +94,7 @@ func runThreads(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cf
 	threads, err := lister.List(context.Background(), corethreads.ListParams{
 		ProjectID: projectID,
 		Limit:     opts.limit,
+		StartTime: startTime,
 	})
 	if err != nil {
 		return fmt.Errorf("list threads: %w", err)

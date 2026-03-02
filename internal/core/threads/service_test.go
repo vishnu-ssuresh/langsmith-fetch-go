@@ -104,6 +104,7 @@ func TestList_DedupesOrdersAndLimits(t *testing.T) {
 	out, err := lister.List(context.Background(), ListParams{
 		ProjectID: "project-123",
 		Limit:     2,
+		StartTime: "2025-12-09T10:00:00Z",
 	})
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
@@ -119,6 +120,9 @@ func TestList_DedupesOrdersAndLimits(t *testing.T) {
 	}
 	if runs.params.Limit < threadListMinQuery {
 		t.Fatalf("Query limit = %d, want at least %d", runs.params.Limit, threadListMinQuery)
+	}
+	if runs.params.StartTime != "2025-12-09T10:00:00Z" {
+		t.Fatalf("StartTime = %q, want %q", runs.params.StartTime, "2025-12-09T10:00:00Z")
 	}
 	if len(threads.calls) != 2 {
 		t.Fatalf("len(calls) = %d, want 2", len(threads.calls))

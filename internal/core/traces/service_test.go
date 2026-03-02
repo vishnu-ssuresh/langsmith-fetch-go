@@ -99,12 +99,16 @@ func TestList_UsesExplicitLimit(t *testing.T) {
 	_, err = svc.List(context.Background(), ListParams{
 		ProjectID: "project-123",
 		Limit:     5,
+		StartTime: "2025-12-09T10:00:00Z",
 	})
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
 	if accessor.params.Limit != 5 {
 		t.Fatalf("Limit = %d, want 5", accessor.params.Limit)
+	}
+	if accessor.params.StartTime != "2025-12-09T10:00:00Z" {
+		t.Fatalf("StartTime = %q, want %q", accessor.params.StartTime, "2025-12-09T10:00:00Z")
 	}
 }
 
