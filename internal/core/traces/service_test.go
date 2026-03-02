@@ -417,3 +417,50 @@ func TestList_RespectsMaxConcurrentForMetadata(t *testing.T) {
 		t.Fatalf("maxInFlight = %d, want <= 1", runs.maxInFlight)
 	}
 }
+
+func TestList_ReportsProgress(t *testing.T) {
+	t.Parallel()
+
+	runs := &fakeRunsAccessor{
+		queryRuns: []langsmithruns.Summary{
+			{ID: "run-1", Name: "trace-a"},
+			{ID: "run-2", Name: "trace-b"},
+		},
+		getByID: map[string]langsmithruns.Run{
+			"run-1": {ID: "run-1"},
+			"run-2": {ID: "run-2"},
+		},
+	}
+	svc, err := New(runs, nil)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	var mu sync.Mutex
+	var updates [][2]int
+	_, err = svc.List(context.Background(), ListParams{
+		ProjectID:       "project-123",
+		IncludeMetadata: true,
+		ShowProgress:    true,
+		Progress: func(completed int, total int) {
+			mu.Lock()
+			updates = append(updates, [2]int{completed, total})
+			mu.Unlock()
+		},
+	})
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+
+	if len(updates) < 2 {
+		t.Fatalf("updates = %v, want at least start and finish", updates)
+	}
+	first := updates[0]
+	last := updates[len(updates)-1]
+	if first != [2]int{0, 2} {
+		t.Fatalf("first update = %v, want [0 2]", first)
+	}
+	if last != [2]int{2, 2} {
+		t.Fatalf("last update = %v, want [2 2]", last)
+	}
+}

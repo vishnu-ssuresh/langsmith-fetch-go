@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	langsmithruns "langsmith-fetch-go/internal/langsmith/runs"
 	langsmiththreads "langsmith-fetch-go/internal/langsmith/threads"
@@ -42,6 +43,7 @@ type ListParams struct {
 	StartTime     string
 	MaxConcurrent int
 	ShowProgress  bool
+	Progress      func(completed int, total int)
 }
 
 // ThreadData is the thread payload returned by bulk listing.
@@ -95,6 +97,14 @@ func (l *Lister) List(ctx context.Context, params ListParams) ([]ThreadData, err
 		return out, nil
 	}
 
+	reportProgress := makeProgressReporter(
+		params.ShowProgress,
+		params.Progress,
+		len(threadOrder),
+	)
+	reportProgress(0)
+	var completed atomic.Int64
+
 	maxConcurrent := normalizeMaxConcurrent(params.MaxConcurrent)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -109,6 +119,9 @@ func (l *Lister) List(ctx context.Context, params ListParams) ([]ThreadData, err
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			defer func() {
+				reportProgress(int(completed.Add(1)))
+			}()
 
 			select {
 			case sem <- struct{}{}:
@@ -178,4 +191,20 @@ func normalizeMaxConcurrent(value int) int {
 		return maxAllowedConcurrent
 	}
 	return value
+}
+
+func makeProgressReporter(
+	enabled bool,
+	callback func(completed int, total int),
+	total int,
+) func(completed int) {
+	if !enabled || callback == nil || total <= 0 {
+		return func(int) {}
+	}
+	var mu sync.Mutex
+	return func(completed int) {
+		mu.Lock()
+		defer mu.Unlock()
+		callback(completed, total)
+	}
 }

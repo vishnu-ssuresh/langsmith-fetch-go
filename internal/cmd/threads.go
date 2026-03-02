@@ -108,12 +108,19 @@ func runThreads(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cf
 		return fmt.Errorf("initialize threads service: %w", err)
 	}
 
+	showProgress := !opts.noProgress
+	progress := newProgressReporter(stderr, "threads", showProgress)
+	if showProgress {
+		defer progress.Done()
+	}
+
 	threads, err := lister.List(context.Background(), corethreads.ListParams{
 		ProjectID:     projectID,
 		Limit:         opts.limit,
 		StartTime:     startTime,
 		MaxConcurrent: opts.maxConcurrent,
-		ShowProgress:  !opts.noProgress,
+		ShowProgress:  showProgress,
+		Progress:      progress.Update,
 	})
 	if err != nil {
 		return fmt.Errorf("list threads: %w", err)

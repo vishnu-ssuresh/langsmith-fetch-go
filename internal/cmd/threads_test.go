@@ -68,6 +68,9 @@ func TestRunThreads_ParsesArgsAndCallsService(t *testing.T) {
 	if fake.params.ProjectID != "project-123" || fake.params.Limit != 5 {
 		t.Fatalf("params = %+v, want project-123/5", fake.params)
 	}
+	if !fake.params.ShowProgress {
+		t.Fatal("ShowProgress = false, want true by default")
+	}
 	if got := out.String(); !strings.Contains(got, "\"thread_id\": \"thread-1\"") {
 		t.Fatalf("stdout = %q, want JSON threads output", got)
 	}

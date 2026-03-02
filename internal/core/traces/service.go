@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	langsmithfeedback "langsmith-fetch-go/internal/langsmith/feedback"
@@ -41,6 +42,7 @@ type ListParams struct {
 	IncludeFeedback bool
 	MaxConcurrent   int
 	ShowProgress    bool
+	Progress        func(completed int, total int)
 }
 
 // TraceMetadata is additional metadata for a trace.
@@ -132,6 +134,14 @@ func (s *Service) List(ctx context.Context, params ListParams) ([]Summary, error
 		return out, nil
 	}
 
+	reportProgress := makeProgressReporter(
+		params.ShowProgress,
+		params.Progress,
+		len(rootRuns),
+	)
+	reportProgress(0)
+	var completed atomic.Int64
+
 	maxConcurrent := normalizeMaxConcurrent(params.MaxConcurrent)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -145,6 +155,9 @@ func (s *Service) List(ctx context.Context, params ListParams) ([]Summary, error
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			defer func() {
+				reportProgress(int(completed.Add(1)))
+			}()
 
 			select {
 			case sem <- struct{}{}:
@@ -246,4 +259,20 @@ func normalizeMaxConcurrent(value int) int {
 		return maxAllowedConcurrent
 	}
 	return value
+}
+
+func makeProgressReporter(
+	enabled bool,
+	callback func(completed int, total int),
+	total int,
+) func(completed int) {
+	if !enabled || callback == nil || total <= 0 {
+		return func(int) {}
+	}
+	var mu sync.Mutex
+	return func(completed int) {
+		mu.Lock()
+		defer mu.Unlock()
+		callback(completed, total)
+	}
 }

@@ -266,3 +266,52 @@ func TestList_RespectsMaxConcurrent(t *testing.T) {
 		t.Fatalf("maxInFlight = %d, want <= 1", threads.maxInFlight)
 	}
 }
+
+func TestList_ReportsProgress(t *testing.T) {
+	t.Parallel()
+
+	runs := &fakeListRunsAccessor{
+		runs: []langsmithruns.RootRun{
+			{ThreadID: "thread-1"},
+			{ThreadID: "thread-2"},
+		},
+	}
+	threads := &fakeListThreadsAccessor{
+		data: map[string][]langsmiththreads.Message{
+			"thread-1": {[]byte(`{"role":"user","content":"a"}`)},
+			"thread-2": {[]byte(`{"role":"user","content":"b"}`)},
+		},
+	}
+	lister, err := NewLister(runs, threads)
+	if err != nil {
+		t.Fatalf("NewLister() error = %v", err)
+	}
+
+	var mu sync.Mutex
+	var updates [][2]int
+	_, err = lister.List(context.Background(), ListParams{
+		ProjectID:    "project-123",
+		Limit:        2,
+		ShowProgress: true,
+		Progress: func(completed int, total int) {
+			mu.Lock()
+			updates = append(updates, [2]int{completed, total})
+			mu.Unlock()
+		},
+	})
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+
+	if len(updates) < 2 {
+		t.Fatalf("updates = %v, want at least start and finish", updates)
+	}
+	first := updates[0]
+	last := updates[len(updates)-1]
+	if first != [2]int{0, 2} {
+		t.Fatalf("first update = %v, want [0 2]", first)
+	}
+	if last != [2]int{2, 2} {
+		t.Fatalf("last update = %v, want [2 2]", last)
+	}
+}

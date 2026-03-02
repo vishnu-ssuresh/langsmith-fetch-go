@@ -122,6 +122,12 @@ func runTraces(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cfg
 		return fmt.Errorf("initialize traces service: %w", err)
 	}
 
+	showProgress := !opts.noProgress
+	progress := newProgressReporter(stderr, "traces", showProgress)
+	if showProgress {
+		defer progress.Done()
+	}
+
 	runs, err := lister.List(context.Background(), coretraces.ListParams{
 		ProjectID:       projectID,
 		Limit:           opts.limit,
@@ -129,7 +135,8 @@ func runTraces(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cfg
 		IncludeMetadata: opts.includeMetadata,
 		IncludeFeedback: opts.includeFeedback,
 		MaxConcurrent:   opts.maxConcurrent,
-		ShowProgress:    !opts.noProgress,
+		ShowProgress:    showProgress,
+		Progress:        progress.Update,
 	})
 	if err != nil {
 		return fmt.Errorf("list traces: %w", err)
