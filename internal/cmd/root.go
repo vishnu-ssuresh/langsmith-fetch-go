@@ -11,13 +11,7 @@ const missingAPIKeyMessage = "LANGSMITH_API_KEY (or LANGCHAIN_API_KEY) is requir
 
 // Execute runs the root CLI command.
 func Execute(args []string, stdout io.Writer, stderr io.Writer, deps Deps) error {
-	_ = stderr // command-specific handlers will use this in later steps.
 	deps = deps.withDefaults()
-
-	cfg := deps.LoadConfig()
-	if cfg.APIKey == "" {
-		return errors.New(missingAPIKeyMessage)
-	}
 
 	if len(args) == 0 {
 		printRootUsage(stdout)
@@ -28,11 +22,21 @@ func Execute(args []string, stdout io.Writer, stderr io.Writer, deps Deps) error
 	case "-h", "--help", "help":
 		printRootUsage(stdout)
 		return nil
+	case "config":
+		return runConfig(args[1:], stdout, stderr, deps, deps.LoadConfig())
 	case "traces":
+		cfg := deps.LoadConfig()
+		if cfg.APIKey == "" {
+			return errors.New(missingAPIKeyMessage)
+		}
 		return runTraces(args[1:], stdout, stderr, deps, cfg)
 	case "thread":
+		cfg := deps.LoadConfig()
+		if cfg.APIKey == "" {
+			return errors.New(missingAPIKeyMessage)
+		}
 		return runThread(args[1:], stdout, stderr, deps, cfg)
-	case "trace", "threads", "config":
+	case "trace", "threads":
 		return fmt.Errorf("command %q not implemented yet", args[0])
 	default:
 		return fmt.Errorf("unknown command %q", args[0])

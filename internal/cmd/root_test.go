@@ -9,10 +9,10 @@ import (
 	"langsmith-fetch-go/internal/config"
 )
 
-func TestExecute_RequiresAPIKey(t *testing.T) {
+func TestExecute_ThreadRequiresAPIKey(t *testing.T) {
 	t.Parallel()
 
-	err := Execute(nil, &bytes.Buffer{}, &bytes.Buffer{}, Deps{
+	err := Execute([]string{"thread"}, &bytes.Buffer{}, &bytes.Buffer{}, Deps{
 		LoadConfig: func() config.Values { return config.Values{} },
 	})
 	if err == nil {
@@ -28,7 +28,7 @@ func TestExecute_ShowsUsageWithNoArgs(t *testing.T) {
 
 	var out bytes.Buffer
 	err := Execute(nil, &out, &bytes.Buffer{}, Deps{
-		LoadConfig: func() config.Values { return config.Values{APIKey: "test"} },
+		LoadConfig: func() config.Values { return config.Values{} },
 	})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
@@ -63,5 +63,24 @@ func TestExecute_TraceCommandIsStubbed(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "not implemented yet") {
 		t.Fatalf("Execute() error = %v, want stub message", err)
+	}
+}
+
+func TestExecute_ConfigShowDoesNotRequireAPIKey(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	err := Execute([]string{"config", "show"}, &out, &bytes.Buffer{}, Deps{
+		LoadConfig: func() config.Values {
+			return config.Values{
+				ProjectName: "my-project",
+			}
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if !strings.Contains(out.String(), "Current configuration:") {
+		t.Fatalf("stdout = %q, want config output", out.String())
 	}
 }

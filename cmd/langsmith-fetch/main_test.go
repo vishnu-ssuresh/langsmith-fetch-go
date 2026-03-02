@@ -3,11 +3,21 @@ package main
 
 import "testing"
 
-func TestRun_ReturnsErrorWhenAPIKeyMissing(t *testing.T) {
+func TestRun_AllowsNoArgsWithoutAPIKey(t *testing.T) {
 	t.Setenv("LANGSMITH_API_KEY", "")
 	t.Setenv("LANGCHAIN_API_KEY", "")
 
 	err := runWithArgs(nil)
+	if err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+}
+
+func TestRun_ThreadRequiresAPIKey(t *testing.T) {
+	t.Setenv("LANGSMITH_API_KEY", "")
+	t.Setenv("LANGCHAIN_API_KEY", "")
+
+	err := runWithArgs([]string{"thread"})
 	if err == nil {
 		t.Fatal("run() error = nil, want non-nil")
 	}
