@@ -30,13 +30,19 @@ func Execute(args []string, stdout io.Writer, stderr io.Writer, deps Deps) error
 			return errors.New(missingAPIKeyMessage)
 		}
 		return runTraces(args[1:], stdout, stderr, deps, cfg)
+	case "trace":
+		cfg := deps.LoadConfig()
+		if cfg.APIKey == "" {
+			return errors.New(missingAPIKeyMessage)
+		}
+		return runTrace(args[1:], stdout, stderr, deps, cfg)
 	case "thread":
 		cfg := deps.LoadConfig()
 		if cfg.APIKey == "" {
 			return errors.New(missingAPIKeyMessage)
 		}
 		return runThread(args[1:], stdout, stderr, deps, cfg)
-	case "trace", "threads":
+	case "threads":
 		return fmt.Errorf("command %q not implemented yet", args[0])
 	default:
 		return fmt.Errorf("unknown command %q", args[0])

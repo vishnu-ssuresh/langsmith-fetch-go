@@ -5,6 +5,7 @@ import (
 	langsmith "langsmith-sdk/go/langsmith"
 
 	"langsmith-fetch-go/internal/config"
+	coresingle "langsmith-fetch-go/internal/core/single"
 	corethreads "langsmith-fetch-go/internal/core/threads"
 	"langsmith-fetch-go/internal/core/traces"
 	langsmithprojects "langsmith-fetch-go/internal/langsmith/projects"
@@ -18,6 +19,7 @@ import (
 // without real process environment access.
 type Deps struct {
 	LoadConfig         func() config.Values
+	NewTraceGetter     func(config.Values) (traceGetter, error)
 	NewTracesLister    func(config.Values) (tracesLister, error)
 	NewThreadGetter    func(config.Values) (threadGetter, error)
 	NewProjectResolver func(config.Values) (projectResolver, error)
@@ -27,6 +29,17 @@ type Deps struct {
 func NewDeps() Deps {
 	return Deps{
 		LoadConfig: config.LoadFromEnv,
+		NewTraceGetter: func(cfg config.Values) (traceGetter, error) {
+			client, err := newSDKClient(cfg)
+			if err != nil {
+				return nil, err
+			}
+			runsAccessor, err := langsmithruns.NewAccessor(client)
+			if err != nil {
+				return nil, err
+			}
+			return coresingle.NewTraceService(runsAccessor)
+		},
 		NewTracesLister: func(cfg config.Values) (tracesLister, error) {
 			client, err := newSDKClient(cfg)
 			if err != nil {
@@ -65,6 +78,9 @@ func (d Deps) withDefaults() Deps {
 	}
 	if d.NewTracesLister == nil {
 		d.NewTracesLister = NewDeps().NewTracesLister
+	}
+	if d.NewTraceGetter == nil {
+		d.NewTraceGetter = NewDeps().NewTraceGetter
 	}
 	if d.NewThreadGetter == nil {
 		d.NewThreadGetter = NewDeps().NewThreadGetter

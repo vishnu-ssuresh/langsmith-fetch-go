@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 
 	"langsmith-sdk/go/langsmith/transport"
 )
@@ -26,11 +27,32 @@ type QueryRootParams struct {
 	Limit     int
 }
 
+// GetRunParams controls single-run fetch behavior.
+type GetRunParams struct {
+	RunID           string
+	IncludeMessages bool
+}
+
 // Summary is the minimal run/trace information returned by QueryRoot.
 type Summary struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	StartTime string `json:"start_time"`
+}
+
+// Message is a raw JSON LangSmith message payload.
+type Message = json.RawMessage
+
+// Run contains single-run fields used by fetch-go.
+type Run struct {
+	ID       string    `json:"id"`
+	Messages []Message `json:"messages"`
+	Outputs  Outputs   `json:"outputs"`
+}
+
+// Outputs is the run output envelope.
+type Outputs struct {
+	Messages []Message `json:"messages"`
 }
 
 type queryRunsRequest struct {
@@ -88,4 +110,37 @@ func (a *Accessor) QueryRoot(ctx context.Context, params QueryRootParams) ([]Sum
 		return nil, fmt.Errorf("runs: decode response: %w", err)
 	}
 	return payload.Runs, nil
+}
+
+// GetRun fetches a single run by ID.
+func (a *Accessor) GetRun(ctx context.Context, params GetRunParams) (Run, error) {
+	if params.RunID == "" {
+		return Run{}, fmt.Errorf("runs: run id is required")
+	}
+
+	req := transport.NewRequest(
+		http.MethodGet,
+		fmt.Sprintf("/runs/%s", url.PathEscape(params.RunID)),
+	)
+	if params.IncludeMessages {
+		req = req.WithQuery("include_messages", "true")
+	}
+
+	resp, err := a.doer.Do(ctx, req)
+	if err != nil {
+		return Run{}, fmt.Errorf("runs: get run: %w", err)
+	}
+	if resp.StatusCode >= http.StatusBadRequest {
+		return Run{}, fmt.Errorf(
+			"runs: get run returned status %d: %s",
+			resp.StatusCode,
+			string(resp.Body),
+		)
+	}
+
+	var run Run
+	if err := json.Unmarshal(resp.Body, &run); err != nil {
+		return Run{}, fmt.Errorf("runs: decode response: %w", err)
+	}
+	return run, nil
 }

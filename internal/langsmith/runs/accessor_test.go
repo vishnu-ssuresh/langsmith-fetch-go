@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -184,5 +186,124 @@ func TestQueryRoot_DecodeError(t *testing.T) {
 	_, err = accessor.QueryRoot(context.Background(), QueryRootParams{ProjectID: "project-123"})
 	if err == nil || !strings.Contains(err.Error(), "decode response") {
 		t.Fatalf("QueryRoot() error = %v, want decode error", err)
+	}
+}
+
+func TestGetRun_RequiresRunID(t *testing.T) {
+	t.Parallel()
+
+	doer := &fakeDoer{}
+	accessor, err := NewAccessor(doer)
+	if err != nil {
+		t.Fatalf("NewAccessor() error = %v", err)
+	}
+
+	_, err = accessor.GetRun(context.Background(), GetRunParams{})
+	if err == nil || !strings.Contains(err.Error(), "run id is required") {
+		t.Fatalf("GetRun() error = %v, want run id required", err)
+	}
+	if doer.called {
+		t.Fatal("Do() called unexpectedly")
+	}
+}
+
+func TestGetRun_BuildsRequestAndDecodesResponse(t *testing.T) {
+	t.Parallel()
+
+	doer := &fakeDoer{
+		resp: transport.Response{
+			StatusCode: http.StatusOK,
+			Body: []byte(`{
+  "id":"trace-1",
+  "messages":[{"role":"user","content":"hi"}],
+  "outputs":{"messages":[{"role":"assistant","content":"hello"}]}
+}`),
+		},
+	}
+	accessor, err := NewAccessor(doer)
+	if err != nil {
+		t.Fatalf("NewAccessor() error = %v", err)
+	}
+
+	run, err := accessor.GetRun(context.Background(), GetRunParams{
+		RunID:           "trace/a b",
+		IncludeMessages: true,
+	})
+	if err != nil {
+		t.Fatalf("GetRun() error = %v", err)
+	}
+	if run.ID != "trace-1" {
+		t.Fatalf("run.ID = %q, want %q", run.ID, "trace-1")
+	}
+	if len(run.Messages) != 1 {
+		t.Fatalf("len(run.Messages) = %d, want 1", len(run.Messages))
+	}
+	if len(run.Outputs.Messages) != 1 {
+		t.Fatalf("len(run.Outputs.Messages) = %d, want 1", len(run.Outputs.Messages))
+	}
+	if doer.req.Method != http.MethodGet {
+		t.Fatalf("Method = %q, want GET", doer.req.Method)
+	}
+	if doer.req.Path != "/runs/trace%2Fa%20b" {
+		t.Fatalf("Path = %q, want escaped path", doer.req.Path)
+	}
+	wantQuery := url.Values{"include_messages": []string{"true"}}
+	if got := doer.req.Query.Encode(); got != wantQuery.Encode() {
+		t.Fatalf("Query = %q, want %q", got, wantQuery.Encode())
+	}
+}
+
+func TestGetRun_PropagatesDoError(t *testing.T) {
+	t.Parallel()
+
+	doer := &fakeDoer{err: errors.New("network failed")}
+	accessor, err := NewAccessor(doer)
+	if err != nil {
+		t.Fatalf("NewAccessor() error = %v", err)
+	}
+
+	_, err = accessor.GetRun(context.Background(), GetRunParams{RunID: "trace-1"})
+	if err == nil || !strings.Contains(err.Error(), "network failed") {
+		t.Fatalf("GetRun() error = %v, want wrapped do error", err)
+	}
+}
+
+func TestGetRun_StatusError(t *testing.T) {
+	t.Parallel()
+
+	doer := &fakeDoer{
+		resp: transport.Response{
+			StatusCode: http.StatusNotFound,
+			Body:       []byte("not found"),
+		},
+	}
+	accessor, err := NewAccessor(doer)
+	if err != nil {
+		t.Fatalf("NewAccessor() error = %v", err)
+	}
+
+	_, err = accessor.GetRun(context.Background(), GetRunParams{RunID: "trace-1"})
+	if err == nil || !strings.Contains(err.Error(), "status 404") {
+		t.Fatalf("GetRun() error = %v, want status error", err)
+	}
+}
+
+func TestGetRun_DecodeError(t *testing.T) {
+	t.Parallel()
+
+	doer := &fakeDoer{
+		resp: transport.Response{
+			StatusCode: http.StatusOK,
+			Body:       []byte(`{"id":`),
+		},
+	}
+	accessor, err := NewAccessor(doer)
+	if err != nil {
+		t.Fatalf("NewAccessor() error = %v", err)
+	}
+
+	_, err = accessor.GetRun(context.Background(), GetRunParams{RunID: "trace-1"})
+	if err == nil || !strings.Contains(err.Error(), "decode response") {
+		t.Fatalf("GetRun() error = %v, want decode error", err)
 	}
 }
