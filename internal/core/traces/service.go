@@ -5,10 +5,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	langsmithfeedback "langsmith-fetch-go/internal/langsmith/feedback"
 	langsmithruns "langsmith-fetch-go/internal/langsmith/runs"
+)
+
+const (
+	defaultMaxConcurrent = 5
+	maxAllowedConcurrent = 100
 )
 
 type runsAccessor interface {
@@ -33,6 +39,8 @@ type ListParams struct {
 	StartTime       string
 	IncludeMetadata bool
 	IncludeFeedback bool
+	MaxConcurrent   int
+	ShowProgress    bool
 }
 
 // TraceMetadata is additional metadata for a trace.
@@ -112,38 +120,78 @@ func (s *Service) List(ctx context.Context, params ListParams) ([]Summary, error
 		return nil, fmt.Errorf("traces: feedback accessor is required when include feedback is enabled")
 	}
 
-	out := make([]Summary, 0, len(rootRuns))
-	for _, run := range rootRuns {
-		item := Summary{
+	out := make([]Summary, len(rootRuns))
+	for i, run := range rootRuns {
+		out[i] = Summary{
 			ID:        run.ID,
 			Name:      run.Name,
 			StartTime: run.StartTime,
 		}
-
-		if params.IncludeMetadata {
-			fullRun, err := s.runs.GetRun(ctx, langsmithruns.GetRunParams{
-				RunID: run.ID,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("traces: fetch trace metadata for %q: %w", run.ID, err)
-			}
-			metadata := extractTraceMetadata(fullRun)
-			item.Metadata = &metadata
-		}
-
-		if params.IncludeFeedback {
-			feedbackItems, err := s.feedback.ListByRuns(ctx, langsmithfeedback.ListParams{
-				RunIDs: []string{run.ID},
-			})
-			if err != nil {
-				return nil, fmt.Errorf("traces: fetch trace feedback for %q: %w", run.ID, err)
-			}
-			item.Feedback = feedbackItems
-		}
-
-		out = append(out, item)
+	}
+	if !params.IncludeMetadata && !params.IncludeFeedback {
+		return out, nil
 	}
 
+	maxConcurrent := normalizeMaxConcurrent(params.MaxConcurrent)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	sem := make(chan struct{}, maxConcurrent)
+	errCh := make(chan error, 1)
+	var wg sync.WaitGroup
+	for i, run := range rootRuns {
+		i := i
+		run := run
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				return
+			}
+			defer func() { <-sem }()
+
+			if params.IncludeMetadata {
+				fullRun, err := s.runs.GetRun(ctx, langsmithruns.GetRunParams{
+					RunID: run.ID,
+				})
+				if err != nil {
+					select {
+					case errCh <- fmt.Errorf("traces: fetch trace metadata for %q: %w", run.ID, err):
+					default:
+					}
+					cancel()
+					return
+				}
+				metadata := extractTraceMetadata(fullRun)
+				out[i].Metadata = &metadata
+			}
+
+			if params.IncludeFeedback {
+				feedbackItems, err := s.feedback.ListByRuns(ctx, langsmithfeedback.ListParams{
+					RunIDs: []string{run.ID},
+				})
+				if err != nil {
+					select {
+					case errCh <- fmt.Errorf("traces: fetch trace feedback for %q: %w", run.ID, err):
+					default:
+					}
+					cancel()
+					return
+				}
+				out[i].Feedback = feedbackItems
+			}
+		}()
+	}
+
+	wg.Wait()
+	select {
+	case err := <-errCh:
+		return nil, err
+	default:
+	}
 	return out, nil
 }
 
@@ -188,4 +236,14 @@ func parseDurationMilliseconds(startTime, endTime string) *int64 {
 
 	durationMS := end.Sub(start).Milliseconds()
 	return &durationMS
+}
+
+func normalizeMaxConcurrent(value int) int {
+	if value <= 0 {
+		return defaultMaxConcurrent
+	}
+	if value > maxAllowedConcurrent {
+		return maxAllowedConcurrent
+	}
+	return value
 }

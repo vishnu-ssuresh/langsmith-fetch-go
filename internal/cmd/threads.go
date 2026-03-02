@@ -22,6 +22,8 @@ type threadsOptions struct {
 	limit           int
 	lastNMinutes    int
 	since           string
+	maxConcurrent   int
+	noProgress      bool
 	format          string
 	outputFile      string
 	outputDir       string
@@ -52,6 +54,18 @@ func runThreads(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cf
 		"",
 		"Only fetch threads since RFC3339 timestamp (e.g., 2025-12-09T10:00:00Z)",
 	)
+	fs.IntVar(
+		&opts.maxConcurrent,
+		"max-concurrent",
+		5,
+		"Maximum concurrent thread fetches",
+	)
+	fs.BoolVar(
+		&opts.noProgress,
+		"no-progress",
+		false,
+		"Disable progress output",
+	)
 	fs.StringVar(
 		&opts.format,
 		"format",
@@ -67,6 +81,9 @@ func runThreads(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cf
 
 	if opts.limit <= 0 {
 		return errors.New("--limit must be > 0")
+	}
+	if opts.maxConcurrent <= 0 {
+		return errors.New("--max-concurrent must be > 0")
 	}
 	if opts.outputFile != "" && opts.outputDir != "" {
 		return errors.New("--file and --dir are mutually exclusive")
@@ -92,9 +109,11 @@ func runThreads(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cf
 	}
 
 	threads, err := lister.List(context.Background(), corethreads.ListParams{
-		ProjectID: projectID,
-		Limit:     opts.limit,
-		StartTime: startTime,
+		ProjectID:     projectID,
+		Limit:         opts.limit,
+		StartTime:     startTime,
+		MaxConcurrent: opts.maxConcurrent,
+		ShowProgress:  !opts.noProgress,
 	})
 	if err != nil {
 		return fmt.Errorf("list threads: %w", err)

@@ -5,24 +5,33 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	langsmithfeedback "langsmith-fetch-go/internal/langsmith/feedback"
 	langsmithruns "langsmith-fetch-go/internal/langsmith/runs"
 )
 
 type fakeRunsAccessor struct {
+	mu sync.Mutex
+
 	queryParams langsmithruns.QueryRootParams
 	queryRuns   []langsmithruns.Summary
 	queryErr    error
 	queryCalled bool
 
-	getParams []langsmithruns.GetRunParams
-	getByID   map[string]langsmithruns.Run
-	getErr    map[string]error
+	getParams   []langsmithruns.GetRunParams
+	getByID     map[string]langsmithruns.Run
+	getErr      map[string]error
+	delay       time.Duration
+	inFlight    int
+	maxInFlight int
 }
 
 func (f *fakeRunsAccessor) QueryRoot(_ context.Context, params langsmithruns.QueryRootParams) ([]langsmithruns.Summary, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.queryCalled = true
 	f.queryParams = params
 	if f.queryErr != nil {
@@ -32,26 +41,56 @@ func (f *fakeRunsAccessor) QueryRoot(_ context.Context, params langsmithruns.Que
 }
 
 func (f *fakeRunsAccessor) GetRun(_ context.Context, params langsmithruns.GetRunParams) (langsmithruns.Run, error) {
+	f.mu.Lock()
 	f.getParams = append(f.getParams, params)
+	f.inFlight++
+	if f.inFlight > f.maxInFlight {
+		f.maxInFlight = f.inFlight
+	}
+	callErr := error(nil)
 	if f.getErr != nil {
 		if err, ok := f.getErr[params.RunID]; ok {
-			return langsmithruns.Run{}, err
+			callErr = err
 		}
 	}
-	if f.getByID == nil {
+	var run langsmithruns.Run
+	hasRunMap := false
+	if f.getByID != nil {
+		run = f.getByID[params.RunID]
+		hasRunMap = true
+	}
+	delay := f.delay
+	f.mu.Unlock()
+
+	if delay > 0 {
+		time.Sleep(delay)
+	}
+
+	f.mu.Lock()
+	f.inFlight--
+	f.mu.Unlock()
+
+	if callErr != nil {
+		return langsmithruns.Run{}, callErr
+	}
+	if !hasRunMap {
 		return langsmithruns.Run{}, nil
 	}
-	return f.getByID[params.RunID], nil
+	return run, nil
 }
 
 type fakeFeedbackAccessor struct {
+	mu sync.Mutex
+
 	calls []langsmithfeedback.ListParams
 	byRun map[string][]langsmithfeedback.Item
 	err   map[string]error
 }
 
 func (f *fakeFeedbackAccessor) ListByRuns(_ context.Context, params langsmithfeedback.ListParams) ([]langsmithfeedback.Item, error) {
+	f.mu.Lock()
 	f.calls = append(f.calls, params)
+	f.mu.Unlock()
 	if len(params.RunIDs) == 0 {
 		return nil, nil
 	}
@@ -65,6 +104,22 @@ func (f *fakeFeedbackAccessor) ListByRuns(_ context.Context, params langsmithfee
 		return nil, nil
 	}
 	return f.byRun[runID], nil
+}
+
+func (f *fakeRunsAccessor) getCalls() []langsmithruns.GetRunParams {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]langsmithruns.GetRunParams, len(f.getParams))
+	copy(out, f.getParams)
+	return out
+}
+
+func (f *fakeFeedbackAccessor) getCalls() []langsmithfeedback.ListParams {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]langsmithfeedback.ListParams, len(f.calls))
+	copy(out, f.calls)
+	return out
 }
 
 func TestNew_RequiresRunsAccessor(t *testing.T) {
@@ -129,8 +184,8 @@ func TestList_DefaultLimitAndReturn(t *testing.T) {
 	if runs.queryParams.Limit != 20 {
 		t.Fatalf("Limit = %d, want 20", runs.queryParams.Limit)
 	}
-	if len(runs.getParams) != 0 {
-		t.Fatalf("GetRun calls = %d, want 0", len(runs.getParams))
+	if got := runs.getCalls(); len(got) != 0 {
+		t.Fatalf("GetRun calls = %d, want 0", len(got))
 	}
 }
 
@@ -211,8 +266,9 @@ func TestList_IncludeMetadataFetchesRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
-	if len(runs.getParams) != 1 || runs.getParams[0].RunID != "run-1" {
-		t.Fatalf("GetRun params = %+v, want one call for run-1", runs.getParams)
+	getCalls := runs.getCalls()
+	if len(getCalls) != 1 || getCalls[0].RunID != "run-1" {
+		t.Fatalf("GetRun params = %+v, want one call for run-1", getCalls)
 	}
 	if out[0].Metadata == nil {
 		t.Fatal("Metadata = nil, want non-nil")
@@ -296,8 +352,9 @@ func TestList_IncludeFeedbackFetchesFeedback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
-	if len(feedback.calls) != 1 || len(feedback.calls[0].RunIDs) != 1 || feedback.calls[0].RunIDs[0] != "run-1" {
-		t.Fatalf("feedback calls = %+v, want run-1", feedback.calls)
+	feedbackCalls := feedback.getCalls()
+	if len(feedbackCalls) != 1 || len(feedbackCalls[0].RunIDs) != 1 || feedbackCalls[0].RunIDs[0] != "run-1" {
+		t.Fatalf("feedback calls = %+v, want run-1", feedbackCalls)
 	}
 	if len(out[0].Feedback) != 1 || out[0].Feedback[0].ID != "fb-1" {
 		t.Fatalf("feedback = %+v, want fb-1", out[0].Feedback)
@@ -324,5 +381,39 @@ func TestList_IncludeFeedbackPropagatesError(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "feedback failed") {
 		t.Fatalf("List() error = %v, want wrapped feedback error", err)
+	}
+}
+
+func TestList_RespectsMaxConcurrentForMetadata(t *testing.T) {
+	t.Parallel()
+
+	runs := &fakeRunsAccessor{
+		queryRuns: []langsmithruns.Summary{
+			{ID: "run-1", Name: "trace-a"},
+			{ID: "run-2", Name: "trace-b"},
+			{ID: "run-3", Name: "trace-c"},
+		},
+		getByID: map[string]langsmithruns.Run{
+			"run-1": {ID: "run-1"},
+			"run-2": {ID: "run-2"},
+			"run-3": {ID: "run-3"},
+		},
+		delay: 20 * time.Millisecond,
+	}
+	svc, err := New(runs, nil)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	_, err = svc.List(context.Background(), ListParams{
+		ProjectID:       "project-123",
+		IncludeMetadata: true,
+		MaxConcurrent:   1,
+	})
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if runs.maxInFlight > 1 {
+		t.Fatalf("maxInFlight = %d, want <= 1", runs.maxInFlight)
 	}
 }

@@ -4,6 +4,7 @@ package threads
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	langsmithruns "langsmith-fetch-go/internal/langsmith/runs"
 	langsmiththreads "langsmith-fetch-go/internal/langsmith/threads"
@@ -11,6 +12,8 @@ import (
 
 const (
 	defaultThreadListLimit = 20
+	defaultMaxConcurrent   = 5
+	maxAllowedConcurrent   = 100
 	threadListOverfetch    = 10
 	threadListMinQuery     = 100
 )
@@ -34,9 +37,11 @@ type Lister struct {
 
 // ListParams controls bulk thread list behavior.
 type ListParams struct {
-	ProjectID string
-	Limit     int
-	StartTime string
+	ProjectID     string
+	Limit         int
+	StartTime     string
+	MaxConcurrent int
+	ShowProgress  bool
 }
 
 // ThreadData is the thread payload returned by bulk listing.
@@ -85,21 +90,59 @@ func (l *Lister) List(ctx context.Context, params ListParams) ([]ThreadData, err
 	}
 
 	threadOrder := uniqueThreadIDs(runs, limit)
-	out := make([]ThreadData, 0, len(threadOrder))
-	for _, threadID := range threadOrder {
-		messages, err := l.threads.GetMessages(ctx, langsmiththreads.GetMessagesParams{
-			ThreadID:  threadID,
-			ProjectID: params.ProjectID,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("threads: fetch thread %q: %w", threadID, err)
-		}
-		out = append(out, ThreadData{
-			ThreadID: threadID,
-			Messages: messages,
-		})
+	out := make([]ThreadData, len(threadOrder))
+	if len(threadOrder) == 0 {
+		return out, nil
 	}
 
+	maxConcurrent := normalizeMaxConcurrent(params.MaxConcurrent)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	sem := make(chan struct{}, maxConcurrent)
+	errCh := make(chan error, 1)
+	var wg sync.WaitGroup
+
+	for index, threadID := range threadOrder {
+		index := index
+		threadID := threadID
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				return
+			}
+			defer func() { <-sem }()
+
+			messages, err := l.threads.GetMessages(ctx, langsmiththreads.GetMessagesParams{
+				ThreadID:  threadID,
+				ProjectID: params.ProjectID,
+			})
+			if err != nil {
+				select {
+				case errCh <- fmt.Errorf("threads: fetch thread %q: %w", threadID, err):
+				default:
+				}
+				cancel()
+				return
+			}
+
+			out[index] = ThreadData{
+				ThreadID: threadID,
+				Messages: messages,
+			}
+		}()
+	}
+
+	wg.Wait()
+	select {
+	case err := <-errCh:
+		return nil, err
+	default:
+	}
 	return out, nil
 }
 
@@ -125,4 +168,14 @@ func uniqueThreadIDs(runs []langsmithruns.RootRun, limit int) []string {
 		}
 	}
 	return out
+}
+
+func normalizeMaxConcurrent(value int) int {
+	if value <= 0 {
+		return defaultMaxConcurrent
+	}
+	if value > maxAllowedConcurrent {
+		return maxAllowedConcurrent
+	}
+	return value
 }

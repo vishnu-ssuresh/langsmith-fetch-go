@@ -351,3 +351,46 @@ func TestRunTraces_PassesIncludeFlags(t *testing.T) {
 		t.Fatal("IncludeFeedback = false, want true")
 	}
 }
+
+func TestRunTraces_PassesConcurrencyFlags(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeTracesLister{runs: []coretraces.Summary{}}
+	err := runTraces(
+		[]string{
+			"--project-id", "project-123",
+			"--max-concurrent", "7",
+			"--no-progress",
+		},
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		Deps{
+			NewTracesLister: func(config.Values) (tracesLister, error) { return fake, nil },
+		},
+		config.Values{APIKey: "test"},
+	)
+	if err != nil {
+		t.Fatalf("runTraces() error = %v", err)
+	}
+	if fake.params.MaxConcurrent != 7 {
+		t.Fatalf("MaxConcurrent = %d, want 7", fake.params.MaxConcurrent)
+	}
+	if fake.params.ShowProgress {
+		t.Fatal("ShowProgress = true, want false")
+	}
+}
+
+func TestRunTraces_RejectsInvalidMaxConcurrent(t *testing.T) {
+	t.Parallel()
+
+	err := runTraces(
+		[]string{"--project-id", "project-123", "--max-concurrent", "0"},
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		Deps{},
+		config.Values{APIKey: "test"},
+	)
+	if err == nil || !strings.Contains(err.Error(), "--max-concurrent must be > 0") {
+		t.Fatalf("runTraces() error = %v, want max-concurrent validation error", err)
+	}
+}

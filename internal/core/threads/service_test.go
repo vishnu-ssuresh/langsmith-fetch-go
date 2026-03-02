@@ -6,7 +6,9 @@ import (
 	"errors"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	langsmithruns "langsmith-fetch-go/internal/langsmith/runs"
 	langsmiththreads "langsmith-fetch-go/internal/langsmith/threads"
@@ -29,22 +31,50 @@ func (f *fakeListRunsAccessor) QueryRootRuns(_ context.Context, params langsmith
 }
 
 type fakeListThreadsAccessor struct {
-	calls []langsmiththreads.GetMessagesParams
-	data  map[string][]langsmiththreads.Message
-	err   map[string]error
+	mu          sync.Mutex
+	calls       []langsmiththreads.GetMessagesParams
+	data        map[string][]langsmiththreads.Message
+	err         map[string]error
+	delay       time.Duration
+	inFlight    int
+	maxInFlight int
 }
 
 func (f *fakeListThreadsAccessor) GetMessages(_ context.Context, params langsmiththreads.GetMessagesParams) ([]langsmiththreads.Message, error) {
+	f.mu.Lock()
 	f.calls = append(f.calls, params)
+	f.inFlight++
+	if f.inFlight > f.maxInFlight {
+		f.maxInFlight = f.inFlight
+	}
+	callErr := error(nil)
 	if f.err != nil {
-		if callErr, ok := f.err[params.ThreadID]; ok {
-			return nil, callErr
+		if err, ok := f.err[params.ThreadID]; ok {
+			callErr = err
 		}
 	}
-	if f.data == nil {
+	data := map[string][]langsmiththreads.Message(nil)
+	if f.data != nil {
+		data = f.data
+	}
+	delay := f.delay
+	f.mu.Unlock()
+
+	if delay > 0 {
+		time.Sleep(delay)
+	}
+
+	f.mu.Lock()
+	f.inFlight--
+	f.mu.Unlock()
+
+	if callErr != nil {
+		return nil, callErr
+	}
+	if data == nil {
 		return nil, nil
 	}
-	return f.data[params.ThreadID], nil
+	return data[params.ThreadID], nil
 }
 
 func TestNewLister_RequiresAccessors(t *testing.T) {
@@ -127,10 +157,11 @@ func TestList_DedupesOrdersAndLimits(t *testing.T) {
 	if len(threads.calls) != 2 {
 		t.Fatalf("len(calls) = %d, want 2", len(threads.calls))
 	}
-	gotIDs := []string{threads.calls[0].ThreadID, threads.calls[1].ThreadID}
-	wantIDs := []string{"thread-1", "thread-2"}
-	if !slices.Equal(gotIDs, wantIDs) {
-		t.Fatalf("thread calls = %v, want %v", gotIDs, wantIDs)
+	gotCalledIDs := []string{threads.calls[0].ThreadID, threads.calls[1].ThreadID}
+	slices.Sort(gotCalledIDs)
+	wantCalledIDs := []string{"thread-1", "thread-2"}
+	if !slices.Equal(gotCalledIDs, wantCalledIDs) {
+		t.Fatalf("thread calls = %v, want %v", gotCalledIDs, wantCalledIDs)
 	}
 }
 
@@ -197,5 +228,41 @@ func TestList_SkipsRunsWithoutThreadID(t *testing.T) {
 	}
 	if len(out) != 1 || out[0].ThreadID != "thread-1" {
 		t.Fatalf("out = %+v, want only thread-1", out)
+	}
+}
+
+func TestList_RespectsMaxConcurrent(t *testing.T) {
+	t.Parallel()
+
+	runs := &fakeListRunsAccessor{
+		runs: []langsmithruns.RootRun{
+			{ThreadID: "thread-1"},
+			{ThreadID: "thread-2"},
+			{ThreadID: "thread-3"},
+		},
+	}
+	threads := &fakeListThreadsAccessor{
+		data: map[string][]langsmiththreads.Message{
+			"thread-1": {[]byte(`{"role":"user","content":"a"}`)},
+			"thread-2": {[]byte(`{"role":"user","content":"b"}`)},
+			"thread-3": {[]byte(`{"role":"user","content":"c"}`)},
+		},
+		delay: 20 * time.Millisecond,
+	}
+	lister, err := NewLister(runs, threads)
+	if err != nil {
+		t.Fatalf("NewLister() error = %v", err)
+	}
+
+	_, err = lister.List(context.Background(), ListParams{
+		ProjectID:     "project-123",
+		Limit:         3,
+		MaxConcurrent: 1,
+	})
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if threads.maxInFlight > 1 {
+		t.Fatalf("maxInFlight = %d, want <= 1", threads.maxInFlight)
 	}
 }

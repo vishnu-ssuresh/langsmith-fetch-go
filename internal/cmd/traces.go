@@ -22,6 +22,8 @@ type tracesOptions struct {
 	limit           int
 	lastNMinutes    int
 	since           string
+	maxConcurrent   int
+	noProgress      bool
 	includeMetadata bool
 	includeFeedback bool
 	format          string
@@ -54,6 +56,18 @@ func runTraces(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cfg
 		"",
 		"Only fetch traces since RFC3339 timestamp (e.g., 2025-12-09T10:00:00Z)",
 	)
+	fs.IntVar(
+		&opts.maxConcurrent,
+		"max-concurrent",
+		5,
+		"Maximum concurrent trace detail fetches",
+	)
+	fs.BoolVar(
+		&opts.noProgress,
+		"no-progress",
+		false,
+		"Disable progress output",
+	)
 	fs.BoolVar(
 		&opts.includeMetadata,
 		"include-metadata",
@@ -81,6 +95,9 @@ func runTraces(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cfg
 
 	if opts.limit <= 0 {
 		return errors.New("--limit must be > 0")
+	}
+	if opts.maxConcurrent <= 0 {
+		return errors.New("--max-concurrent must be > 0")
 	}
 	if opts.outputFile != "" && opts.outputDir != "" {
 		return errors.New("--file and --dir are mutually exclusive")
@@ -111,6 +128,8 @@ func runTraces(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cfg
 		StartTime:       startTime,
 		IncludeMetadata: opts.includeMetadata,
 		IncludeFeedback: opts.includeFeedback,
+		MaxConcurrent:   opts.maxConcurrent,
+		ShowProgress:    !opts.noProgress,
 	})
 	if err != nil {
 		return fmt.Errorf("list traces: %w", err)
