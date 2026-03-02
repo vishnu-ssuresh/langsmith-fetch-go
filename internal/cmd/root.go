@@ -43,7 +43,11 @@ func Execute(args []string, stdout io.Writer, stderr io.Writer, deps Deps) error
 		}
 		return runThread(args[1:], stdout, stderr, deps, cfg)
 	case "threads":
-		return fmt.Errorf("command %q not implemented yet", args[0])
+		cfg := deps.LoadConfig()
+		if cfg.APIKey == "" {
+			return errors.New(missingAPIKeyMessage)
+		}
+		return runThreads(args[1:], stdout, stderr, deps, cfg)
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}

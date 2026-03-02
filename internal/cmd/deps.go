@@ -22,6 +22,7 @@ type Deps struct {
 	NewTraceGetter     func(config.Values) (traceGetter, error)
 	NewTracesLister    func(config.Values) (tracesLister, error)
 	NewThreadGetter    func(config.Values) (threadGetter, error)
+	NewThreadsLister   func(config.Values) (threadsLister, error)
 	NewProjectResolver func(config.Values) (projectResolver, error)
 }
 
@@ -62,6 +63,21 @@ func NewDeps() Deps {
 			}
 			return corethreads.New(threadsAccessor)
 		},
+		NewThreadsLister: func(cfg config.Values) (threadsLister, error) {
+			client, err := newSDKClient(cfg)
+			if err != nil {
+				return nil, err
+			}
+			runsAccessor, err := langsmithruns.NewAccessor(client)
+			if err != nil {
+				return nil, err
+			}
+			threadsAccessor, err := langsmiththreads.NewAccessor(client)
+			if err != nil {
+				return nil, err
+			}
+			return corethreads.NewLister(runsAccessor, threadsAccessor)
+		},
 		NewProjectResolver: func(cfg config.Values) (projectResolver, error) {
 			client, err := newSDKClient(cfg)
 			if err != nil {
@@ -84,6 +100,9 @@ func (d Deps) withDefaults() Deps {
 	}
 	if d.NewThreadGetter == nil {
 		d.NewThreadGetter = NewDeps().NewThreadGetter
+	}
+	if d.NewThreadsLister == nil {
+		d.NewThreadsLister = NewDeps().NewThreadsLister
 	}
 	if d.NewProjectResolver == nil {
 		d.NewProjectResolver = NewDeps().NewProjectResolver

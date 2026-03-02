@@ -52,17 +52,17 @@ func TestExecute_UnknownCommand(t *testing.T) {
 	}
 }
 
-func TestExecute_ThreadsCommandIsStubbed(t *testing.T) {
+func TestExecute_ThreadsRequiresAPIKey(t *testing.T) {
 	t.Parallel()
 
 	err := Execute([]string{"threads"}, &bytes.Buffer{}, &bytes.Buffer{}, Deps{
-		LoadConfig: func() config.Values { return config.Values{APIKey: "test"} },
+		LoadConfig: func() config.Values { return config.Values{} },
 	})
 	if err == nil {
 		t.Fatal("Execute() error = nil, want non-nil")
 	}
-	if !strings.Contains(err.Error(), "not implemented yet") {
-		t.Fatalf("Execute() error = %v, want stub message", err)
+	if !strings.Contains(err.Error(), "LANGSMITH_API_KEY") {
+		t.Fatalf("Execute() error = %v, want missing API key message", err)
 	}
 }
 

@@ -27,6 +27,14 @@ type QueryRootParams struct {
 	Limit     int
 }
 
+// RootRun is the root-run shape needed for thread list construction.
+type RootRun struct {
+	ID        string
+	Name      string
+	StartTime string
+	ThreadID  string
+}
+
 // GetRunParams controls single-run fetch behavior.
 type GetRunParams struct {
 	RunID           string
@@ -71,6 +79,24 @@ func NewAccessor(doer Doer) (*Accessor, error) {
 
 // QueryRoot fetches recent root runs for a project.
 func (a *Accessor) QueryRoot(ctx context.Context, params QueryRootParams) ([]Summary, error) {
+	runs, err := a.QueryRootRuns(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]Summary, 0, len(runs))
+	for _, run := range runs {
+		out = append(out, Summary{
+			ID:        run.ID,
+			Name:      run.Name,
+			StartTime: run.StartTime,
+		})
+	}
+	return out, nil
+}
+
+// QueryRootRuns fetches recent root runs with thread metadata.
+func (a *Accessor) QueryRootRuns(ctx context.Context, params QueryRootParams) ([]RootRun, error) {
 	if params.ProjectID == "" {
 		return nil, fmt.Errorf("runs: project id is required")
 	}
@@ -104,12 +130,31 @@ func (a *Accessor) QueryRoot(ctx context.Context, params QueryRootParams) ([]Sum
 	}
 
 	var payload struct {
-		Runs []Summary `json:"runs"`
+		Runs []struct {
+			ID        string `json:"id"`
+			Name      string `json:"name"`
+			StartTime string `json:"start_time"`
+			Extra     struct {
+				Metadata struct {
+					ThreadID string `json:"thread_id"`
+				} `json:"metadata"`
+			} `json:"extra"`
+		} `json:"runs"`
 	}
 	if err := json.Unmarshal(resp.Body, &payload); err != nil {
 		return nil, fmt.Errorf("runs: decode response: %w", err)
 	}
-	return payload.Runs, nil
+
+	runs := make([]RootRun, 0, len(payload.Runs))
+	for _, item := range payload.Runs {
+		runs = append(runs, RootRun{
+			ID:        item.ID,
+			Name:      item.Name,
+			StartTime: item.StartTime,
+			ThreadID:  item.Extra.Metadata.ThreadID,
+		})
+	}
+	return runs, nil
 }
 
 // GetRun fetches a single run by ID.

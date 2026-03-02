@@ -189,6 +189,40 @@ func TestQueryRoot_DecodeError(t *testing.T) {
 	}
 }
 
+func TestQueryRootRuns_ParsesThreadIDs(t *testing.T) {
+	t.Parallel()
+
+	doer := &fakeDoer{
+		resp: transport.Response{
+			StatusCode: 200,
+			Body: []byte(`{
+  "runs":[
+    {"id":"run-1","name":"trace-a","start_time":"2026-01-01T00:00:00Z","extra":{"metadata":{"thread_id":"thread-1"}}},
+    {"id":"run-2","name":"trace-b","start_time":"2026-01-01T01:00:00Z","extra":{"metadata":{"thread_id":"thread-2"}}}
+  ]
+}`),
+		},
+	}
+	accessor, err := NewAccessor(doer)
+	if err != nil {
+		t.Fatalf("NewAccessor() error = %v", err)
+	}
+
+	runs, err := accessor.QueryRootRuns(context.Background(), QueryRootParams{ProjectID: "project-123"})
+	if err != nil {
+		t.Fatalf("QueryRootRuns() error = %v", err)
+	}
+	if len(runs) != 2 {
+		t.Fatalf("len(runs) = %d, want 2", len(runs))
+	}
+	if runs[0].ThreadID != "thread-1" {
+		t.Fatalf("runs[0].ThreadID = %q, want %q", runs[0].ThreadID, "thread-1")
+	}
+	if runs[1].ThreadID != "thread-2" {
+		t.Fatalf("runs[1].ThreadID = %q, want %q", runs[1].ThreadID, "thread-2")
+	}
+}
+
 func TestGetRun_RequiresRunID(t *testing.T) {
 	t.Parallel()
 
