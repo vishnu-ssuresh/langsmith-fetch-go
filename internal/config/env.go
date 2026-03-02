@@ -8,11 +8,12 @@ import (
 
 // Values contains fetch-go runtime config loaded from environment.
 type Values struct {
-	APIKey      string
-	WorkspaceID string
-	Endpoint    string
-	ProjectUUID string
-	ProjectName string
+	APIKey        string
+	WorkspaceID   string
+	Endpoint      string
+	ProjectUUID   string
+	ProjectName   string
+	DefaultFormat string
 }
 
 // LoadFromEnv reads config from process environment variables.

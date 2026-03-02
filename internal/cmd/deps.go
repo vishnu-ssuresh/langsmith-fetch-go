@@ -29,7 +29,7 @@ type Deps struct {
 // NewDeps returns production command dependencies.
 func NewDeps() Deps {
 	return Deps{
-		LoadConfig: config.LoadFromEnv,
+		LoadConfig: config.Load,
 		NewTraceGetter: func(cfg config.Values) (traceGetter, error) {
 			client, err := newSDKClient(cfg)
 			if err != nil {
@@ -90,7 +90,7 @@ func NewDeps() Deps {
 
 func (d Deps) withDefaults() Deps {
 	if d.LoadConfig == nil {
-		d.LoadConfig = config.LoadFromEnv
+		d.LoadConfig = config.Load
 	}
 	if d.NewTracesLister == nil {
 		d.NewTracesLister = NewDeps().NewTracesLister
