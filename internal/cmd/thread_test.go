@@ -98,6 +98,50 @@ func TestRunThread_ParsesArgsAndCallsService(t *testing.T) {
 	}
 }
 
+func TestRunThread_SupportsPositionalThreadID(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeThreadGetter{
+		messages: []coresingle.ThreadMessage{
+			[]byte(`{"role":"user","content":"hello"}`),
+		},
+	}
+
+	var out bytes.Buffer
+	err := runThread(
+		[]string{"--project-id", "project-123", "--format", "json", "thread-123"},
+		&out,
+		&bytes.Buffer{},
+		Deps{
+			NewThreadGetter: func(config.Values) (threadGetter, error) { return fake, nil },
+		},
+		config.Values{APIKey: "test"},
+	)
+	if err != nil {
+		t.Fatalf("runThread() error = %v", err)
+	}
+	if fake.params.ThreadID != "thread-123" {
+		t.Fatalf("ThreadID = %q, want %q", fake.params.ThreadID, "thread-123")
+	}
+}
+
+func TestRunThread_RejectsExtraPositionalArgs(t *testing.T) {
+	t.Parallel()
+
+	err := runThread(
+		[]string{"--project-id", "project-123", "thread-123", "extra"},
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		Deps{
+			NewThreadGetter: func(config.Values) (threadGetter, error) { return &fakeThreadGetter{}, nil },
+		},
+		config.Values{APIKey: "test"},
+	)
+	if err == nil || !strings.Contains(err.Error(), "unexpected positional arguments") {
+		t.Fatalf("runThread() error = %v, want positional argument error", err)
+	}
+}
+
 func TestRunThread_InitializeError(t *testing.T) {
 	t.Parallel()
 

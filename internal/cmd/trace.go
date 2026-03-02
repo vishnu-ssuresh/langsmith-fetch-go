@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"langsmith-fetch-go/internal/config"
@@ -71,6 +72,12 @@ func runTrace(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cfg 
 	fs.SetOutput(stderr)
 
 	var opts traceOptions
+	var leadingTraceID string
+	parseArgs := args
+	if len(parseArgs) > 0 && !strings.HasPrefix(parseArgs[0], "-") {
+		leadingTraceID = parseArgs[0]
+		parseArgs = parseArgs[1:]
+	}
 	fs.StringVar(&opts.traceID, "trace-id", "", "Trace ID")
 	fs.StringVar(
 		&opts.format,
@@ -91,8 +98,21 @@ func runTrace(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cfg 
 		false,
 		"Include trace feedback (extra API call)",
 	)
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(parseArgs); err != nil {
 		return err
+	}
+
+	rest := fs.Args()
+	if opts.traceID == "" {
+		if leadingTraceID != "" {
+			opts.traceID = leadingTraceID
+		} else if len(rest) > 0 {
+			opts.traceID = rest[0]
+			rest = rest[1:]
+		}
+	}
+	if len(rest) > 0 {
+		return fmt.Errorf("unexpected positional arguments: %v", rest)
 	}
 
 	if opts.traceID == "" {

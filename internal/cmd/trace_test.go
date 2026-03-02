@@ -94,6 +94,50 @@ func TestRunTrace_ParsesArgsAndCallsService(t *testing.T) {
 	}
 }
 
+func TestRunTrace_SupportsPositionalTraceID(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeTraceGetter{
+		messages: []coresingle.Message{
+			[]byte(`{"role":"user","content":"hello"}`),
+		},
+	}
+
+	var out bytes.Buffer
+	err := runTrace(
+		[]string{"trace-123", "--format", "json"},
+		&out,
+		&bytes.Buffer{},
+		Deps{
+			NewTraceGetter: func(config.Values) (traceGetter, error) { return fake, nil },
+		},
+		config.Values{APIKey: "test"},
+	)
+	if err != nil {
+		t.Fatalf("runTrace() error = %v", err)
+	}
+	if fake.params.TraceID != "trace-123" {
+		t.Fatalf("TraceID = %q, want %q", fake.params.TraceID, "trace-123")
+	}
+}
+
+func TestRunTrace_RejectsExtraPositionalArgs(t *testing.T) {
+	t.Parallel()
+
+	err := runTrace(
+		[]string{"trace-123", "extra"},
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		Deps{
+			NewTraceGetter: func(config.Values) (traceGetter, error) { return &fakeTraceGetter{}, nil },
+		},
+		config.Values{APIKey: "test"},
+	)
+	if err == nil || !strings.Contains(err.Error(), "unexpected positional arguments") {
+		t.Fatalf("runTrace() error = %v, want positional argument error", err)
+	}
+}
+
 func TestRunTrace_InitializeError(t *testing.T) {
 	t.Parallel()
 

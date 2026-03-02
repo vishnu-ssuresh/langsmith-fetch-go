@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"strings"
 
 	"langsmith-fetch-go/internal/config"
 	coresingle "langsmith-fetch-go/internal/core/single"
@@ -31,6 +32,12 @@ func runThread(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cfg
 	fs.SetOutput(stderr)
 
 	var opts threadOptions
+	var leadingThreadID string
+	parseArgs := args
+	if len(parseArgs) > 0 && !strings.HasPrefix(parseArgs[0], "-") {
+		leadingThreadID = parseArgs[0]
+		parseArgs = parseArgs[1:]
+	}
 	fs.StringVar(&opts.projectID, "project-id", "", "Project UUID")
 	fs.StringVar(&opts.projectID, "project-uuid", "", "Project UUID")
 	fs.StringVar(&opts.threadID, "thread-id", "", "Thread ID")
@@ -41,8 +48,21 @@ func runThread(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cfg
 		"Output format: pretty|json|raw",
 	)
 	fs.StringVar(&opts.outputFile, "file", "", "Write output to a file instead of stdout")
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(parseArgs); err != nil {
 		return err
+	}
+
+	rest := fs.Args()
+	if opts.threadID == "" {
+		if leadingThreadID != "" {
+			opts.threadID = leadingThreadID
+		} else if len(rest) > 0 {
+			opts.threadID = rest[0]
+			rest = rest[1:]
+		}
+	}
+	if len(rest) > 0 {
+		return fmt.Errorf("unexpected positional arguments: %v", rest)
 	}
 
 	if opts.threadID == "" {
