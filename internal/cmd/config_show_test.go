@@ -58,17 +58,113 @@ func TestRunConfig_Help(t *testing.T) {
 	if !strings.Contains(out.String(), "langsmith-fetch config show") {
 		t.Fatalf("stdout = %q, want config usage", out.String())
 	}
+	if !strings.Contains(out.String(), "langsmith-fetch config set <key> <value>") {
+		t.Fatalf("stdout = %q, want config set usage", out.String())
+	}
 }
 
 func TestRunConfig_UnknownSubcommand(t *testing.T) {
 	t.Parallel()
 
-	err := runConfig([]string{"set"}, &bytes.Buffer{}, &bytes.Buffer{}, Deps{}, config.Values{})
+	err := runConfig([]string{"delete"}, &bytes.Buffer{}, &bytes.Buffer{}, Deps{}, config.Values{})
 	if err == nil {
 		t.Fatal("runConfig() error = nil, want non-nil")
 	}
 	if !strings.Contains(err.Error(), "unknown config subcommand") {
 		t.Fatalf("runConfig() error = %v, want unknown subcommand", err)
+	}
+}
+
+func TestRunConfig_Set(t *testing.T) {
+	loadFn := func(string) (config.Values, error) {
+		return config.Values{
+			ProjectName: "old-project",
+		}, nil
+	}
+
+	var saved config.Values
+	saveFn := func(_ string, values config.Values) error {
+		saved = values
+		return nil
+	}
+
+	var out bytes.Buffer
+	err := runConfigSetWithStore([]string{"project-uuid", "project-123"}, &out, loadFn, saveFn)
+	if err != nil {
+		t.Fatalf("runConfigSetWithStore() error = %v", err)
+	}
+	if saved.ProjectUUID != "project-123" {
+		t.Fatalf("saved.ProjectUUID = %q, want %q", saved.ProjectUUID, "project-123")
+	}
+	if saved.ProjectName != "old-project" {
+		t.Fatalf("saved.ProjectName = %q, want %q", saved.ProjectName, "old-project")
+	}
+	if !strings.Contains(out.String(), "Updated project-uuid in config.") {
+		t.Fatalf("stdout = %q, want update message", out.String())
+	}
+}
+
+func TestRunConfig_SetRejectsBadKey(t *testing.T) {
+	t.Parallel()
+
+	err := runConfig(
+		[]string{"set", "bad-key", "value"},
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		Deps{},
+		config.Values{},
+	)
+	if err == nil || !strings.Contains(err.Error(), "unsupported config key") {
+		t.Fatalf("runConfig() error = %v, want unsupported config key error", err)
+	}
+}
+
+func TestRunConfig_SetValidatesDefaultFormat(t *testing.T) {
+	loadFn := func(string) (config.Values, error) {
+		return config.Values{}, nil
+	}
+	saveFn := func(string, config.Values) error {
+		t.Fatal("saveConfigToFile() called unexpectedly")
+		return nil
+	}
+
+	err := runConfigSetWithStore([]string{"default-format", "xml"}, &bytes.Buffer{}, loadFn, saveFn)
+	if err == nil || !strings.Contains(err.Error(), "default-format must be one of") {
+		t.Fatalf("runConfig() error = %v, want default-format validation error", err)
+	}
+}
+
+func TestRunConfig_SetSupportsUnderscoreKey(t *testing.T) {
+	loadFn := func(string) (config.Values, error) {
+		return config.Values{}, nil
+	}
+	var saved config.Values
+	saveFn := func(_ string, values config.Values) error {
+		saved = values
+		return nil
+	}
+
+	err := runConfigSetWithStore([]string{"project_uuid", "project-123"}, &bytes.Buffer{}, loadFn, saveFn)
+	if err != nil {
+		t.Fatalf("runConfig() error = %v", err)
+	}
+	if saved.ProjectUUID != "project-123" {
+		t.Fatalf("saved.ProjectUUID = %q, want %q", saved.ProjectUUID, "project-123")
+	}
+}
+
+func TestRunConfig_SetUsageError(t *testing.T) {
+	t.Parallel()
+
+	err := runConfig(
+		[]string{"set", "project-uuid"},
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		Deps{},
+		config.Values{},
+	)
+	if err == nil || !strings.Contains(err.Error(), "usage: langsmith-fetch config set") {
+		t.Fatalf("runConfig() error = %v, want usage error", err)
 	}
 }
 
