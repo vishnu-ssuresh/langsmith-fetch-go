@@ -21,13 +21,14 @@ import (
 // Keeping these as function fields makes command code easy to unit test
 // without real process environment access.
 type Deps struct {
-	LoadConfig         func() config.Values
-	NewTraceGetter     func(config.Values) (traceGetter, error)
-	NewTracesLister    func(config.Values) (tracesLister, error)
-	NewThreadGetter    func(config.Values) (threadGetter, error)
-	NewThreadsLister   func(config.Values) (threadsLister, error)
-	NewProjectResolver func(config.Values) (projectResolver, error)
-	CacheProjectUUID   func(projectName string, projectUUID string) error
+	LoadConfig          func() config.Values
+	NewTraceGetter      func(config.Values) (traceGetter, error)
+	NewFeedbackAccessor func(config.Values) (traceFeedbackAccessor, error)
+	NewTracesLister     func(config.Values) (tracesLister, error)
+	NewThreadGetter     func(config.Values) (threadGetter, error)
+	NewThreadsLister    func(config.Values) (threadsLister, error)
+	NewProjectResolver  func(config.Values) (projectResolver, error)
+	CacheProjectUUID    func(projectName string, projectUUID string) error
 }
 
 // NewDeps returns production command dependencies.
@@ -44,6 +45,13 @@ func NewDeps() Deps {
 				return nil, err
 			}
 			return coresingle.NewTraceService(runsAccessor)
+		},
+		NewFeedbackAccessor: func(cfg config.Values) (traceFeedbackAccessor, error) {
+			client, err := newSDKClient(cfg)
+			if err != nil {
+				return nil, err
+			}
+			return langsmithfeedback.NewAccessor(client)
 		},
 		NewTracesLister: func(cfg config.Values) (tracesLister, error) {
 			client, err := newSDKClient(cfg)
@@ -103,6 +111,9 @@ func (d Deps) withDefaults() Deps {
 	}
 	if d.NewTracesLister == nil {
 		d.NewTracesLister = NewDeps().NewTracesLister
+	}
+	if d.NewFeedbackAccessor == nil {
+		d.NewFeedbackAccessor = NewDeps().NewFeedbackAccessor
 	}
 	if d.NewTraceGetter == nil {
 		d.NewTraceGetter = NewDeps().NewTraceGetter

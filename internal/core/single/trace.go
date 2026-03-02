@@ -25,6 +25,9 @@ type TraceParams struct {
 // Message is a raw JSON LangSmith message payload.
 type Message = langsmithruns.Message
 
+// Run is the LangSmith run payload used for optional metadata extraction.
+type Run = langsmithruns.Run
+
 // NewTraceService creates a single-trace service.
 func NewTraceService(accessor runsAccessor) (*TraceService, error) {
 	if accessor == nil {
@@ -39,16 +42,9 @@ func NewTraceService(accessor runsAccessor) (*TraceService, error) {
 // 1. run.messages
 // 2. run.outputs.messages
 func (s *TraceService) GetMessages(ctx context.Context, params TraceParams) ([]Message, error) {
-	if params.TraceID == "" {
-		return nil, fmt.Errorf("single trace: trace id is required")
-	}
-
-	run, err := s.runs.GetRun(ctx, langsmithruns.GetRunParams{
-		RunID:           params.TraceID,
-		IncludeMessages: true,
-	})
+	run, err := s.GetRun(ctx, params)
 	if err != nil {
-		return nil, fmt.Errorf("single trace: fetch trace: %w", err)
+		return nil, err
 	}
 	if len(run.Messages) > 0 {
 		return run.Messages, nil
@@ -57,4 +53,20 @@ func (s *TraceService) GetMessages(ctx context.Context, params TraceParams) ([]M
 		return run.Outputs.Messages, nil
 	}
 	return []Message{}, nil
+}
+
+// GetRun fetches the raw run payload for a trace.
+func (s *TraceService) GetRun(ctx context.Context, params TraceParams) (Run, error) {
+	if params.TraceID == "" {
+		return Run{}, fmt.Errorf("single trace: trace id is required")
+	}
+
+	run, err := s.runs.GetRun(ctx, langsmithruns.GetRunParams{
+		RunID:           params.TraceID,
+		IncludeMessages: true,
+	})
+	if err != nil {
+		return Run{}, fmt.Errorf("single trace: fetch trace: %w", err)
+	}
+	return run, nil
 }

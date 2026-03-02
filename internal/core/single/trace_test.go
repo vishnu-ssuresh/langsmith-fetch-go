@@ -129,3 +129,25 @@ func TestGetMessages_PropagatesAccessorError(t *testing.T) {
 		t.Fatalf("GetMessages() error = %v, want wrapped accessor error", err)
 	}
 }
+
+func TestGetRun_ReturnsRun(t *testing.T) {
+	t.Parallel()
+
+	accessor := &fakeRunsAccessor{
+		run: langsmithruns.Run{
+			ID: "trace-1",
+		},
+	}
+	svc, err := NewTraceService(accessor)
+	if err != nil {
+		t.Fatalf("NewTraceService() error = %v", err)
+	}
+
+	run, err := svc.GetRun(context.Background(), TraceParams{TraceID: "trace-1"})
+	if err != nil {
+		t.Fatalf("GetRun() error = %v", err)
+	}
+	if run.ID != "trace-1" {
+		t.Fatalf("run.ID = %q, want %q", run.ID, "trace-1")
+	}
+}

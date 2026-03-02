@@ -12,6 +12,7 @@ import (
 
 	"langsmith-fetch-go/internal/config"
 	coresingle "langsmith-fetch-go/internal/core/single"
+	langsmithfeedback "langsmith-fetch-go/internal/langsmith/feedback"
 )
 
 type fakeTraceGetter struct {
@@ -26,6 +27,29 @@ func (f *fakeTraceGetter) GetMessages(_ context.Context, params coresingle.Trace
 		return nil, f.err
 	}
 	return f.messages, nil
+}
+
+func (f *fakeTraceGetter) GetRun(_ context.Context, params coresingle.TraceParams) (coresingle.Run, error) {
+	f.params = params
+	if f.err != nil {
+		return coresingle.Run{}, f.err
+	}
+	return coresingle.Run{
+		ID:       params.TraceID,
+		Messages: f.messages,
+	}, nil
+}
+
+type fakeTraceFeedbackAccessor struct {
+	items []langsmithfeedback.Item
+	err   error
+}
+
+func (f *fakeTraceFeedbackAccessor) ListByRuns(_ context.Context, _ langsmithfeedback.ListParams) ([]langsmithfeedback.Item, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.items, nil
 }
 
 func TestRunTrace_RequiresTraceID(t *testing.T) {
@@ -220,5 +244,101 @@ func TestRunTrace_WritesSingleFile(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "\"role\": \"user\"") {
 		t.Fatalf("file = %q, want JSON trace output", string(data))
+	}
+}
+
+func TestRunTrace_IncludeMetadataOutput(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeTraceGetter{
+		messages: []coresingle.Message{
+			[]byte(`{"role":"assistant","content":"hello"}`),
+		},
+	}
+
+	var out bytes.Buffer
+	err := runTrace(
+		[]string{"--trace-id", "trace-123", "--include-metadata", "--format", "json"},
+		&out,
+		&bytes.Buffer{},
+		Deps{
+			NewTraceGetter: func(config.Values) (traceGetter, error) { return fake, nil },
+			NewFeedbackAccessor: func(config.Values) (traceFeedbackAccessor, error) {
+				return &fakeTraceFeedbackAccessor{}, nil
+			},
+		},
+		config.Values{APIKey: "test"},
+	)
+	if err != nil {
+		t.Fatalf("runTrace() error = %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "\"trace_id\": \"trace-123\"") {
+		t.Fatalf("stdout = %q, want trace_id", got)
+	}
+	if !strings.Contains(got, "\"metadata\"") {
+		t.Fatalf("stdout = %q, want metadata section", got)
+	}
+}
+
+func TestRunTrace_IncludeFeedbackOutput(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeTraceGetter{
+		messages: []coresingle.Message{
+			[]byte(`{"role":"assistant","content":"hello"}`),
+		},
+	}
+	fb := &fakeTraceFeedbackAccessor{
+		items: []langsmithfeedback.Item{
+			{ID: "fb-1", RunID: "trace-123", Key: "correctness"},
+		},
+	}
+
+	var out bytes.Buffer
+	err := runTrace(
+		[]string{"--trace-id", "trace-123", "--include-feedback", "--format", "json"},
+		&out,
+		&bytes.Buffer{},
+		Deps{
+			NewTraceGetter: func(config.Values) (traceGetter, error) { return fake, nil },
+			NewFeedbackAccessor: func(config.Values) (traceFeedbackAccessor, error) {
+				return fb, nil
+			},
+		},
+		config.Values{APIKey: "test"},
+	)
+	if err != nil {
+		t.Fatalf("runTrace() error = %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "\"feedback\"") || !strings.Contains(got, "\"fb-1\"") {
+		t.Fatalf("stdout = %q, want feedback payload", got)
+	}
+}
+
+func TestRunTrace_IncludeFeedbackInitError(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeTraceGetter{
+		messages: []coresingle.Message{
+			[]byte(`{"role":"assistant","content":"hello"}`),
+		},
+	}
+
+	err := runTrace(
+		[]string{"--trace-id", "trace-123", "--include-feedback", "--format", "json"},
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		Deps{
+			NewTraceGetter: func(config.Values) (traceGetter, error) { return fake, nil },
+			NewFeedbackAccessor: func(config.Values) (traceFeedbackAccessor, error) {
+				return nil, errors.New("boom")
+			},
+		},
+		config.Values{APIKey: "test"},
+	)
+	if err == nil || !strings.Contains(err.Error(), "initialize feedback accessor") {
+		t.Fatalf("runTrace() error = %v, want feedback init error", err)
 	}
 }
