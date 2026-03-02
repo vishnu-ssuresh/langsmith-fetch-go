@@ -6,6 +6,7 @@ import (
 
 	"langsmith-fetch-go/internal/config"
 	"langsmith-fetch-go/internal/core/traces"
+	langsmithruns "langsmith-fetch-go/internal/langsmith/runs"
 )
 
 // Deps contains root command dependencies.
@@ -30,7 +31,11 @@ func NewDeps() Deps {
 			if err != nil {
 				return nil, err
 			}
-			return traces.New(client)
+			runsAccessor, err := langsmithruns.NewAccessor(client)
+			if err != nil {
+				return nil, err
+			}
+			return traces.New(runsAccessor)
 		},
 	}
 }

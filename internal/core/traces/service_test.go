@@ -1,30 +1,32 @@
-// service_test.go validates trace service requests and response handling.
+// service_test.go validates trace service orchestration behavior.
 package traces
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
 
-	"langsmith-sdk/go/langsmith/transport"
+	langsmithruns "langsmith-fetch-go/internal/langsmith/runs"
 )
 
-type fakeDoer struct {
-	req    transport.Request
-	resp   transport.Response
+type fakeRunsAccessor struct {
+	params langsmithruns.QueryRootParams
+	runs   []langsmithruns.Summary
 	err    error
 	called bool
 }
 
-func (f *fakeDoer) Do(_ context.Context, req transport.Request) (transport.Response, error) {
+func (f *fakeRunsAccessor) QueryRoot(_ context.Context, params langsmithruns.QueryRootParams) ([]langsmithruns.Summary, error) {
 	f.called = true
-	f.req = req
-	return f.resp, f.err
+	f.params = params
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.runs, nil
 }
 
-func TestNew_RequiresDoer(t *testing.T) {
+func TestNew_RequiresRunsAccessor(t *testing.T) {
 	t.Parallel()
 
 	svc, err := New(nil)
@@ -39,8 +41,8 @@ func TestNew_RequiresDoer(t *testing.T) {
 func TestList_RequiresProjectID(t *testing.T) {
 	t.Parallel()
 
-	doer := &fakeDoer{}
-	svc, err := New(doer)
+	accessor := &fakeRunsAccessor{}
+	svc, err := New(accessor)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -49,21 +51,20 @@ func TestList_RequiresProjectID(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "project id is required") {
 		t.Fatalf("List() error = %v, want project id required", err)
 	}
-	if doer.called {
-		t.Fatal("Do() called unexpectedly")
+	if accessor.called {
+		t.Fatal("QueryRoot() called unexpectedly")
 	}
 }
 
-func TestList_DefaultLimitAndDecode(t *testing.T) {
+func TestList_DefaultLimitAndReturn(t *testing.T) {
 	t.Parallel()
 
-	doer := &fakeDoer{
-		resp: transport.Response{
-			StatusCode: 200,
-			Body:       []byte(`{"runs":[{"id":"run-1","name":"trace-a","start_time":"2026-01-01T00:00:00Z"}]}`),
+	accessor := &fakeRunsAccessor{
+		runs: []langsmithruns.Summary{
+			{ID: "run-1", Name: "trace-a", StartTime: "2026-01-01T00:00:00Z"},
 		},
 	}
-	svc, err := New(doer)
+	svc, err := New(accessor)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -78,40 +79,19 @@ func TestList_DefaultLimitAndDecode(t *testing.T) {
 	if runs[0].ID != "run-1" {
 		t.Fatalf("runs[0].ID = %q, want %q", runs[0].ID, "run-1")
 	}
-
-	if doer.req.Method != "POST" {
-		t.Fatalf("Method = %q, want POST", doer.req.Method)
+	if accessor.params.ProjectID != "project-123" {
+		t.Fatalf("ProjectID = %q, want %q", accessor.params.ProjectID, "project-123")
 	}
-	if doer.req.Path != "/runs/query" {
-		t.Fatalf("Path = %q, want %q", doer.req.Path, "/runs/query")
-	}
-
-	var body queryRunsRequest
-	if err := json.Unmarshal(doer.req.Body, &body); err != nil {
-		t.Fatalf("json.Unmarshal(request body) error = %v", err)
-	}
-
-	if len(body.Session) != 1 || body.Session[0] != "project-123" {
-		t.Fatalf("Session = %#v, want []string{\"project-123\"}", body.Session)
-	}
-	if !body.IsRoot {
-		t.Fatalf("IsRoot = %v, want true", body.IsRoot)
-	}
-	if body.Limit != 20 {
-		t.Fatalf("Limit = %d, want 20", body.Limit)
+	if accessor.params.Limit != 20 {
+		t.Fatalf("Limit = %d, want 20", accessor.params.Limit)
 	}
 }
 
 func TestList_UsesExplicitLimit(t *testing.T) {
 	t.Parallel()
 
-	doer := &fakeDoer{
-		resp: transport.Response{
-			StatusCode: 200,
-			Body:       []byte(`{"runs":[]}`),
-		},
-	}
-	svc, err := New(doer)
+	accessor := &fakeRunsAccessor{}
+	svc, err := New(accessor)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -123,21 +103,16 @@ func TestList_UsesExplicitLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
-
-	var body queryRunsRequest
-	if err := json.Unmarshal(doer.req.Body, &body); err != nil {
-		t.Fatalf("json.Unmarshal(request body) error = %v", err)
-	}
-	if body.Limit != 5 {
-		t.Fatalf("Limit = %d, want 5", body.Limit)
+	if accessor.params.Limit != 5 {
+		t.Fatalf("Limit = %d, want 5", accessor.params.Limit)
 	}
 }
 
-func TestList_PropagatesDoError(t *testing.T) {
+func TestList_PropagatesAccessorError(t *testing.T) {
 	t.Parallel()
 
-	doer := &fakeDoer{err: errors.New("network failed")}
-	svc, err := New(doer)
+	accessor := &fakeRunsAccessor{err: errors.New("network failed")}
+	svc, err := New(accessor)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -145,45 +120,5 @@ func TestList_PropagatesDoError(t *testing.T) {
 	_, err = svc.List(context.Background(), ListParams{ProjectID: "project-123"})
 	if err == nil || !strings.Contains(err.Error(), "network failed") {
 		t.Fatalf("List() error = %v, want wrapped do error", err)
-	}
-}
-
-func TestList_StatusError(t *testing.T) {
-	t.Parallel()
-
-	doer := &fakeDoer{
-		resp: transport.Response{
-			StatusCode: 400,
-			Body:       []byte(`bad request`),
-		},
-	}
-	svc, err := New(doer)
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
-
-	_, err = svc.List(context.Background(), ListParams{ProjectID: "project-123"})
-	if err == nil || !strings.Contains(err.Error(), "status 400") {
-		t.Fatalf("List() error = %v, want status error", err)
-	}
-}
-
-func TestList_DecodeError(t *testing.T) {
-	t.Parallel()
-
-	doer := &fakeDoer{
-		resp: transport.Response{
-			StatusCode: 200,
-			Body:       []byte(`{"runs":`),
-		},
-	}
-	svc, err := New(doer)
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
-
-	_, err = svc.List(context.Background(), ListParams{ProjectID: "project-123"})
-	if err == nil || !strings.Contains(err.Error(), "decode response") {
-		t.Fatalf("List() error = %v, want decode error", err)
 	}
 }
