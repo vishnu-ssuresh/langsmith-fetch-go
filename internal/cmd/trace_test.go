@@ -131,3 +131,57 @@ func TestRunTrace_PrettyOutput(t *testing.T) {
 		t.Fatalf("stdout = %q, want pretty message output", got)
 	}
 }
+
+func TestRunTrace_UsesConfigDefaultFormat(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeTraceGetter{
+		messages: []coresingle.Message{
+			[]byte(`{"role":"user","content":"hello"}`),
+		},
+	}
+
+	var out bytes.Buffer
+	err := runTrace(
+		[]string{"--trace-id", "trace-123"},
+		&out,
+		&bytes.Buffer{},
+		Deps{
+			NewTraceGetter: func(config.Values) (traceGetter, error) { return fake, nil },
+		},
+		config.Values{APIKey: "test", DefaultFormat: "json"},
+	)
+	if err != nil {
+		t.Fatalf("runTrace() error = %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "\"role\": \"user\"") {
+		t.Fatalf("stdout = %q, want json output from config default format", got)
+	}
+}
+
+func TestRunTrace_FlagFormatOverridesConfigDefault(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeTraceGetter{
+		messages: []coresingle.Message{
+			[]byte(`{"role":"assistant","content":"hi"}`),
+		},
+	}
+
+	var out bytes.Buffer
+	err := runTrace(
+		[]string{"--trace-id", "trace-123", "--format", "pretty"},
+		&out,
+		&bytes.Buffer{},
+		Deps{
+			NewTraceGetter: func(config.Values) (traceGetter, error) { return fake, nil },
+		},
+		config.Values{APIKey: "test", DefaultFormat: "json"},
+	)
+	if err != nil {
+		t.Fatalf("runTrace() error = %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "[1] {\"role\":\"assistant\"") {
+		t.Fatalf("stdout = %q, want pretty output from explicit --format", got)
+	}
+}

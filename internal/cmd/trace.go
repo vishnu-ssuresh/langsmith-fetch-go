@@ -28,7 +28,12 @@ func runTrace(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cfg 
 
 	var opts traceOptions
 	fs.StringVar(&opts.traceID, "trace-id", "", "Trace ID")
-	fs.StringVar(&opts.format, "format", "pretty", "Output format: pretty|json|raw")
+	fs.StringVar(
+		&opts.format,
+		"format",
+		configuredDefaultFormat(cfg.DefaultFormat),
+		"Output format: pretty|json|raw",
+	)
 	if err := fs.Parse(args); err != nil {
 		return err
 	}

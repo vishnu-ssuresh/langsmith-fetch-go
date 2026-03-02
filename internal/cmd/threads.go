@@ -37,7 +37,12 @@ func runThreads(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cf
 	fs.StringVar(&opts.projectID, "project-id", "", "Project UUID")
 	fs.StringVar(&opts.projectID, "project-uuid", "", "Project UUID")
 	fs.IntVar(&opts.limit, "limit", 20, "Max threads to return")
-	fs.StringVar(&opts.format, "format", "pretty", "Output format: pretty|json|raw")
+	fs.StringVar(
+		&opts.format,
+		"format",
+		configuredDefaultFormat(cfg.DefaultFormat),
+		"Output format: pretty|json|raw",
+	)
 	fs.StringVar(&opts.outputFile, "file", "", "Write output JSON to a single file")
 	fs.StringVar(&opts.outputDir, "dir", "", "Write one JSON file per thread to a directory")
 	fs.StringVar(&opts.filenamePattern, "filename-pattern", "{thread_id}.json", "File pattern for directory mode")

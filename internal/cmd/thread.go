@@ -31,7 +31,12 @@ func runThread(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cfg
 	fs.StringVar(&opts.projectID, "project-id", "", "Project UUID")
 	fs.StringVar(&opts.projectID, "project-uuid", "", "Project UUID")
 	fs.StringVar(&opts.threadID, "thread-id", "", "Thread ID")
-	fs.StringVar(&opts.format, "format", "pretty", "Output format: pretty|json|raw")
+	fs.StringVar(
+		&opts.format,
+		"format",
+		configuredDefaultFormat(cfg.DefaultFormat),
+		"Output format: pretty|json|raw",
+	)
 	if err := fs.Parse(args); err != nil {
 		return err
 	}

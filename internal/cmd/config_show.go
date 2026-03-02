@@ -28,12 +28,13 @@ func runConfig(args []string, stdout io.Writer, _ io.Writer, _ Deps, cfg config.
 func runConfigShow(w io.Writer, cfg config.Values) error {
 	_, err := fmt.Fprintf(
 		w,
-		"Current configuration:\n  api_key: %s\n  workspace_id: %s\n  endpoint: %s\n  project_uuid: %s\n  project_name: %s\n",
+		"Current configuration:\n  api_key: %s\n  workspace_id: %s\n  endpoint: %s\n  project_uuid: %s\n  project_name: %s\n  default_format: %s\n",
 		maskSecret(cfg.APIKey),
 		blankAsNotSet(cfg.WorkspaceID),
 		blankAsNotSet(cfg.Endpoint),
 		blankAsNotSet(cfg.ProjectUUID),
 		blankAsNotSet(cfg.ProjectName),
+		blankAsNotSet(cfg.DefaultFormat),
 	)
 	return err
 }

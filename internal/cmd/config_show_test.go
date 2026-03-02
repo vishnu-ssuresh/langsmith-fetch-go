@@ -19,11 +19,12 @@ func TestRunConfig_Show(t *testing.T) {
 		&bytes.Buffer{},
 		Deps{},
 		config.Values{
-			APIKey:      "test-api-key-secret",
-			WorkspaceID: "workspace-123",
-			Endpoint:    "https://api.example.com",
-			ProjectUUID: "project-uuid-123",
-			ProjectName: "my-project",
+			APIKey:        "test-api-key-secret",
+			WorkspaceID:   "workspace-123",
+			Endpoint:      "https://api.example.com",
+			ProjectUUID:   "project-uuid-123",
+			ProjectName:   "my-project",
+			DefaultFormat: "json",
 		},
 	)
 	if err != nil {
@@ -38,6 +39,7 @@ func TestRunConfig_Show(t *testing.T) {
 		"endpoint: https://api.example.com",
 		"project_uuid: project-uuid-123",
 		"project_name: my-project",
+		"default_format: json",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("stdout = %q, want to contain %q", got, want)

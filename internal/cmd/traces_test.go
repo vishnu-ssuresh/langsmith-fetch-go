@@ -134,6 +134,33 @@ func TestRunTraces_PrettyOutput(t *testing.T) {
 	}
 }
 
+func TestRunTraces_UsesConfigDefaultFormat(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeTracesLister{
+		runs: []coretraces.Summary{
+			{ID: "trace-1", Name: "hello", StartTime: "2026-01-01T00:00:00Z"},
+		},
+	}
+
+	var out bytes.Buffer
+	err := runTraces(
+		[]string{"--project-id", "project-123"},
+		&out,
+		&bytes.Buffer{},
+		Deps{
+			NewTracesLister: func(config.Values) (tracesLister, error) { return fake, nil },
+		},
+		config.Values{APIKey: "test", DefaultFormat: "json"},
+	)
+	if err != nil {
+		t.Fatalf("runTraces() error = %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "\"id\": \"trace-1\"") {
+		t.Fatalf("stdout = %q, want json output from config default format", got)
+	}
+}
+
 func TestRunTraces_WritesSingleFile(t *testing.T) {
 	t.Parallel()
 

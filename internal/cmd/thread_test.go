@@ -164,6 +164,33 @@ func TestRunThread_PrettyOutput(t *testing.T) {
 	}
 }
 
+func TestRunThread_UsesConfigDefaultFormat(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeThreadGetter{
+		messages: []coresingle.ThreadMessage{
+			[]byte(`{"role":"user","content":"hello"}`),
+		},
+	}
+
+	var out bytes.Buffer
+	err := runThread(
+		[]string{"--project-id", "project-123", "--thread-id", "thread-123"},
+		&out,
+		&bytes.Buffer{},
+		Deps{
+			NewThreadGetter: func(config.Values) (threadGetter, error) { return fake, nil },
+		},
+		config.Values{APIKey: "test", DefaultFormat: "json"},
+	)
+	if err != nil {
+		t.Fatalf("runThread() error = %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "\"role\": \"user\"") {
+		t.Fatalf("stdout = %q, want json output from config default format", got)
+	}
+}
+
 func TestRunThread_UsesConfigProjectUUID(t *testing.T) {
 	t.Parallel()
 
