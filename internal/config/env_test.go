@@ -12,6 +12,8 @@ func TestLoadFromLookup_PrefersLangSmithOverLangChain(t *testing.T) {
 		"LANGSMITH_WORKSPACE_ID": "smith-workspace",
 		"LANGCHAIN_WORKSPACE_ID": "chain-workspace",
 		"LANGCHAIN_ENDPOINT":     "https://chain.example.com",
+		"LANGCHAIN_PROJECT_UUID": "chain-project-uuid",
+		"LANGCHAIN_PROJECT":      "chain-project",
 	}
 
 	values := loadFromLookup(func(key string) (string, bool) {
@@ -28,6 +30,12 @@ func TestLoadFromLookup_PrefersLangSmithOverLangChain(t *testing.T) {
 	if values.Endpoint != "https://chain.example.com" {
 		t.Fatalf("Endpoint = %q, want %q", values.Endpoint, "https://chain.example.com")
 	}
+	if values.ProjectUUID != "chain-project-uuid" {
+		t.Fatalf("ProjectUUID = %q, want %q", values.ProjectUUID, "chain-project-uuid")
+	}
+	if values.ProjectName != "chain-project" {
+		t.Fatalf("ProjectName = %q, want %q", values.ProjectName, "chain-project")
+	}
 }
 
 func TestLoadFromLookup_TrimsWhitespaceAndQuotes(t *testing.T) {
@@ -36,6 +44,8 @@ func TestLoadFromLookup_TrimsWhitespaceAndQuotes(t *testing.T) {
 	env := map[string]string{
 		"LANGSMITH_API_KEY":      ` "test-key" `,
 		"LANGSMITH_ENDPOINT":     "  https://api.example.com  ",
+		"LANGSMITH_PROJECT_UUID": ` "project-uuid" `,
+		"LANGSMITH_PROJECT":      ` "project-name" `,
 		"LANGCHAIN_API_KEY":      "ignored",
 		"LANGCHAIN_ENDPOINT":     "ignored",
 		"LANGCHAIN_WORKSPACE_ID": "ignored",
@@ -52,6 +62,12 @@ func TestLoadFromLookup_TrimsWhitespaceAndQuotes(t *testing.T) {
 	if values.Endpoint != "https://api.example.com" {
 		t.Fatalf("Endpoint = %q, want %q", values.Endpoint, "https://api.example.com")
 	}
+	if values.ProjectUUID != "project-uuid" {
+		t.Fatalf("ProjectUUID = %q, want %q", values.ProjectUUID, "project-uuid")
+	}
+	if values.ProjectName != "project-name" {
+		t.Fatalf("ProjectName = %q, want %q", values.ProjectName, "project-name")
+	}
 }
 
 func TestLoadFromLookup_EmptyWhenUnset(t *testing.T) {
@@ -61,7 +77,11 @@ func TestLoadFromLookup_EmptyWhenUnset(t *testing.T) {
 		return "", false
 	})
 
-	if values.APIKey != "" || values.WorkspaceID != "" || values.Endpoint != "" {
+	if values.APIKey != "" ||
+		values.WorkspaceID != "" ||
+		values.Endpoint != "" ||
+		values.ProjectUUID != "" ||
+		values.ProjectName != "" {
 		t.Fatalf("values = %+v, want all empty", values)
 	}
 }

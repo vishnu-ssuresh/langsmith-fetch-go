@@ -11,6 +11,8 @@ type Values struct {
 	APIKey      string
 	WorkspaceID string
 	Endpoint    string
+	ProjectUUID string
+	ProjectName string
 }
 
 // LoadFromEnv reads config from process environment variables.
@@ -27,6 +29,16 @@ func loadFromLookup(lookup func(string) (string, bool)) Values {
 			"LANGCHAIN_WORKSPACE_ID",
 		),
 		Endpoint: firstEnv(lookup, "LANGSMITH_ENDPOINT", "LANGCHAIN_ENDPOINT"),
+		ProjectUUID: firstEnv(
+			lookup,
+			"LANGSMITH_PROJECT_UUID",
+			"LANGCHAIN_PROJECT_UUID",
+		),
+		ProjectName: firstEnv(
+			lookup,
+			"LANGSMITH_PROJECT",
+			"LANGCHAIN_PROJECT",
+		),
 	}
 }
 

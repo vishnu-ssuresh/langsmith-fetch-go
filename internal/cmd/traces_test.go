@@ -131,3 +131,51 @@ func TestRunTraces_PrettyOutput(t *testing.T) {
 		t.Fatalf("stdout = %q, want pretty trace output", got)
 	}
 }
+
+func TestRunTraces_UsesConfigProjectUUID(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeTracesLister{runs: []coretraces.Summary{}}
+	err := runTraces(
+		[]string{"--format", "json"},
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		Deps{
+			NewTracesLister: func(config.Values) (tracesLister, error) { return fake, nil },
+		},
+		config.Values{APIKey: "test", ProjectUUID: "cfg-project"},
+	)
+	if err != nil {
+		t.Fatalf("runTraces() error = %v", err)
+	}
+	if fake.params.ProjectID != "cfg-project" {
+		t.Fatalf("ProjectID = %q, want %q", fake.params.ProjectID, "cfg-project")
+	}
+}
+
+func TestRunTraces_ResolvesProjectName(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeTracesLister{runs: []coretraces.Summary{}}
+	project := &fakeProjectResolver{id: "resolved-project-id"}
+
+	err := runTraces(
+		[]string{"--format", "json"},
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		Deps{
+			NewTracesLister:    func(config.Values) (tracesLister, error) { return fake, nil },
+			NewProjectResolver: func(config.Values) (projectResolver, error) { return project, nil },
+		},
+		config.Values{APIKey: "test", ProjectName: "my-project"},
+	)
+	if err != nil {
+		t.Fatalf("runTraces() error = %v", err)
+	}
+	if project.name != "my-project" {
+		t.Fatalf("resolver name = %q, want %q", project.name, "my-project")
+	}
+	if fake.params.ProjectID != "resolved-project-id" {
+		t.Fatalf("ProjectID = %q, want %q", fake.params.ProjectID, "resolved-project-id")
+	}
+}

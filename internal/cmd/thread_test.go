@@ -163,3 +163,51 @@ func TestRunThread_PrettyOutput(t *testing.T) {
 		t.Fatalf("stdout = %q, want pretty message output", got)
 	}
 }
+
+func TestRunThread_UsesConfigProjectUUID(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeThreadGetter{messages: []corethreads.Message{}}
+	err := runThread(
+		[]string{"--thread-id", "thread-123", "--format", "json"},
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		Deps{
+			NewThreadGetter: func(config.Values) (threadGetter, error) { return fake, nil },
+		},
+		config.Values{APIKey: "test", ProjectUUID: "cfg-project"},
+	)
+	if err != nil {
+		t.Fatalf("runThread() error = %v", err)
+	}
+	if fake.params.ProjectID != "cfg-project" {
+		t.Fatalf("ProjectID = %q, want %q", fake.params.ProjectID, "cfg-project")
+	}
+}
+
+func TestRunThread_ResolvesProjectName(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeThreadGetter{messages: []corethreads.Message{}}
+	project := &fakeProjectResolver{id: "resolved-project-id"}
+
+	err := runThread(
+		[]string{"--thread-id", "thread-123", "--format", "json"},
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		Deps{
+			NewThreadGetter:    func(config.Values) (threadGetter, error) { return fake, nil },
+			NewProjectResolver: func(config.Values) (projectResolver, error) { return project, nil },
+		},
+		config.Values{APIKey: "test", ProjectName: "my-project"},
+	)
+	if err != nil {
+		t.Fatalf("runThread() error = %v", err)
+	}
+	if project.name != "my-project" {
+		t.Fatalf("resolver name = %q, want %q", project.name, "my-project")
+	}
+	if fake.params.ProjectID != "resolved-project-id" {
+		t.Fatalf("ProjectID = %q, want %q", fake.params.ProjectID, "resolved-project-id")
+	}
+}

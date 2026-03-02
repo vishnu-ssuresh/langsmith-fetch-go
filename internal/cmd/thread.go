@@ -37,9 +37,6 @@ func runThread(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cfg
 		return err
 	}
 
-	if opts.projectID == "" {
-		return errors.New("--project-id is required")
-	}
 	if opts.threadID == "" {
 		return errors.New("--thread-id is required")
 	}
@@ -49,6 +46,11 @@ func runThread(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cfg
 		return fmt.Errorf("--format must be one of pretty|json|raw, got %q", opts.format)
 	}
 
+	projectID, err := resolveProjectID(opts.projectID, cfg, deps)
+	if err != nil {
+		return err
+	}
+
 	getter, err := deps.NewThreadGetter(cfg)
 	if err != nil {
 		return fmt.Errorf("initialize threads service: %w", err)
@@ -56,7 +58,7 @@ func runThread(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cfg
 
 	messages, err := getter.GetMessages(context.Background(), corethreads.GetParams{
 		ThreadID:  opts.threadID,
-		ProjectID: opts.projectID,
+		ProjectID: projectID,
 	})
 	if err != nil {
 		return fmt.Errorf("fetch thread: %w", err)

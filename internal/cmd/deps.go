@@ -7,6 +7,7 @@ import (
 	"langsmith-fetch-go/internal/config"
 	corethreads "langsmith-fetch-go/internal/core/threads"
 	"langsmith-fetch-go/internal/core/traces"
+	langsmithprojects "langsmith-fetch-go/internal/langsmith/projects"
 	langsmithruns "langsmith-fetch-go/internal/langsmith/runs"
 	langsmiththreads "langsmith-fetch-go/internal/langsmith/threads"
 )
@@ -16,9 +17,10 @@ import (
 // Keeping these as function fields makes command code easy to unit test
 // without real process environment access.
 type Deps struct {
-	LoadConfig      func() config.Values
-	NewTracesLister func(config.Values) (tracesLister, error)
-	NewThreadGetter func(config.Values) (threadGetter, error)
+	LoadConfig         func() config.Values
+	NewTracesLister    func(config.Values) (tracesLister, error)
+	NewThreadGetter    func(config.Values) (threadGetter, error)
+	NewProjectResolver func(config.Values) (projectResolver, error)
 }
 
 // NewDeps returns production command dependencies.
@@ -26,11 +28,7 @@ func NewDeps() Deps {
 	return Deps{
 		LoadConfig: config.LoadFromEnv,
 		NewTracesLister: func(cfg config.Values) (tracesLister, error) {
-			client, err := langsmith.NewClient(langsmith.ClientOptions{
-				APIKey:      cfg.APIKey,
-				WorkspaceID: cfg.WorkspaceID,
-				Endpoint:    cfg.Endpoint,
-			})
+			client, err := newSDKClient(cfg)
 			if err != nil {
 				return nil, err
 			}
@@ -41,11 +39,7 @@ func NewDeps() Deps {
 			return traces.New(runsAccessor)
 		},
 		NewThreadGetter: func(cfg config.Values) (threadGetter, error) {
-			client, err := langsmith.NewClient(langsmith.ClientOptions{
-				APIKey:      cfg.APIKey,
-				WorkspaceID: cfg.WorkspaceID,
-				Endpoint:    cfg.Endpoint,
-			})
+			client, err := newSDKClient(cfg)
 			if err != nil {
 				return nil, err
 			}
@@ -54,6 +48,13 @@ func NewDeps() Deps {
 				return nil, err
 			}
 			return corethreads.New(threadsAccessor)
+		},
+		NewProjectResolver: func(cfg config.Values) (projectResolver, error) {
+			client, err := newSDKClient(cfg)
+			if err != nil {
+				return nil, err
+			}
+			return langsmithprojects.NewAccessor(client)
 		},
 	}
 }
@@ -68,5 +69,16 @@ func (d Deps) withDefaults() Deps {
 	if d.NewThreadGetter == nil {
 		d.NewThreadGetter = NewDeps().NewThreadGetter
 	}
+	if d.NewProjectResolver == nil {
+		d.NewProjectResolver = NewDeps().NewProjectResolver
+	}
 	return d
+}
+
+func newSDKClient(cfg config.Values) (*langsmith.Client, error) {
+	return langsmith.NewClient(langsmith.ClientOptions{
+		APIKey:      cfg.APIKey,
+		WorkspaceID: cfg.WorkspaceID,
+		Endpoint:    cfg.Endpoint,
+	})
 }

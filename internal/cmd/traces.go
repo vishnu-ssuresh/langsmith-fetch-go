@@ -36,9 +36,6 @@ func runTraces(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cfg
 		return err
 	}
 
-	if opts.projectID == "" {
-		return errors.New("--project-id is required")
-	}
 	if opts.limit <= 0 {
 		return errors.New("--limit must be > 0")
 	}
@@ -48,13 +45,18 @@ func runTraces(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cfg
 		return fmt.Errorf("--format must be one of pretty|json|raw, got %q", opts.format)
 	}
 
+	projectID, err := resolveProjectID(opts.projectID, cfg, deps)
+	if err != nil {
+		return err
+	}
+
 	lister, err := deps.NewTracesLister(cfg)
 	if err != nil {
 		return fmt.Errorf("initialize traces service: %w", err)
 	}
 
 	runs, err := lister.List(context.Background(), coretraces.ListParams{
-		ProjectID: opts.projectID,
+		ProjectID: projectID,
 		Limit:     opts.limit,
 	})
 	if err != nil {
