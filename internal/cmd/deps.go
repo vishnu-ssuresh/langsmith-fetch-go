@@ -2,6 +2,8 @@
 package cmd
 
 import (
+	"strings"
+
 	langsmith "langsmith-sdk/go/langsmith"
 
 	"langsmith-fetch-go/internal/config"
@@ -25,6 +27,7 @@ type Deps struct {
 	NewThreadGetter    func(config.Values) (threadGetter, error)
 	NewThreadsLister   func(config.Values) (threadsLister, error)
 	NewProjectResolver func(config.Values) (projectResolver, error)
+	CacheProjectUUID   func(projectName string, projectUUID string) error
 }
 
 // NewDeps returns production command dependencies.
@@ -90,6 +93,7 @@ func NewDeps() Deps {
 			}
 			return langsmithprojects.NewAccessor(client)
 		},
+		CacheProjectUUID: cacheProjectUUIDToConfigFile,
 	}
 }
 
@@ -112,6 +116,9 @@ func (d Deps) withDefaults() Deps {
 	if d.NewProjectResolver == nil {
 		d.NewProjectResolver = NewDeps().NewProjectResolver
 	}
+	if d.CacheProjectUUID == nil {
+		d.CacheProjectUUID = NewDeps().CacheProjectUUID
+	}
 	return d
 }
 
@@ -121,4 +128,23 @@ func newSDKClient(cfg config.Values) (*langsmith.Client, error) {
 		WorkspaceID: cfg.WorkspaceID,
 		Endpoint:    cfg.Endpoint,
 	})
+}
+
+func cacheProjectUUIDToConfigFile(projectName string, projectUUID string) error {
+	projectName = strings.TrimSpace(projectName)
+	projectUUID = strings.TrimSpace(projectUUID)
+	if projectName == "" || projectUUID == "" {
+		return nil
+	}
+
+	values, err := config.LoadFromFile("")
+	if err != nil {
+		return err
+	}
+	if values.ProjectName == projectName && values.ProjectUUID == projectUUID {
+		return nil
+	}
+	values.ProjectName = projectName
+	values.ProjectUUID = projectUUID
+	return config.SaveToFile("", values)
 }

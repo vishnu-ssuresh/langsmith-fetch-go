@@ -30,6 +30,9 @@ func resolveProjectID(input string, cfg config.Values, deps Deps) (string, error
 		if err != nil {
 			return "", fmt.Errorf("resolve project %q: %w", cfg.ProjectName, err)
 		}
+		if deps.CacheProjectUUID != nil {
+			_ = deps.CacheProjectUUID(cfg.ProjectName, projectID)
+		}
 		return projectID, nil
 	}
 	return "", errors.New("--project-id is required (or set LANGSMITH_PROJECT_UUID or LANGSMITH_PROJECT)")
