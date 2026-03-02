@@ -15,8 +15,10 @@ import (
 // WriteTraceMessages renders single-trace messages in the requested format.
 func WriteTraceMessages(w io.Writer, format string, messages []coresingle.Message) error {
 	switch format {
-	case "json", "raw":
-		return writeJSONTraceMessages(w, messages)
+	case "json":
+		return writeJSONTraceMessages(w, messages, true)
+	case "raw":
+		return writeJSONTraceMessages(w, messages, false)
 	case "pretty":
 		return writePrettyMessages(w, messages, "No trace messages found.")
 	default:
@@ -27,8 +29,10 @@ func WriteTraceMessages(w io.Writer, format string, messages []coresingle.Messag
 // WriteThreadMessages renders single-thread messages in the requested format.
 func WriteThreadMessages(w io.Writer, format string, messages []coresingle.ThreadMessage) error {
 	switch format {
-	case "json", "raw":
-		return writeJSONThreadMessages(w, messages)
+	case "json":
+		return writeJSONThreadMessages(w, messages, true)
+	case "raw":
+		return writeJSONThreadMessages(w, messages, false)
 	case "pretty":
 		return writePrettyMessages(w, messages, "No thread messages found.")
 	default:
@@ -39,8 +43,10 @@ func WriteThreadMessages(w io.Writer, format string, messages []coresingle.Threa
 // WriteTraceSummaries renders trace summaries in the requested format.
 func WriteTraceSummaries(w io.Writer, format string, runs []coretraces.Summary) error {
 	switch format {
-	case "json", "raw":
-		return writeJSONTraceSummaries(w, runs)
+	case "json":
+		return writeJSONTraceSummaries(w, runs, true)
+	case "raw":
+		return writeJSONTraceSummaries(w, runs, false)
 	case "pretty":
 		return writePrettyTraceSummaries(w, runs)
 	default:
@@ -51,8 +57,10 @@ func WriteTraceSummaries(w io.Writer, format string, runs []coretraces.Summary) 
 // WriteThreadList renders thread list data in the requested format.
 func WriteThreadList(w io.Writer, format string, threads []corethreads.ThreadData) error {
 	switch format {
-	case "json", "raw":
-		return writeJSONThreadList(w, threads)
+	case "json":
+		return writeJSONThreadList(w, threads, true)
+	case "raw":
+		return writeJSONThreadList(w, threads, false)
 	case "pretty":
 		return writePrettyThreadList(w, threads)
 	default:
@@ -60,27 +68,35 @@ func WriteThreadList(w io.Writer, format string, threads []corethreads.ThreadDat
 	}
 }
 
-func writeJSONTraceMessages(w io.Writer, messages []coresingle.Message) error {
+func writeJSONTraceMessages(w io.Writer, messages []coresingle.Message, pretty bool) error {
 	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
+	if pretty {
+		enc.SetIndent("", "  ")
+	}
 	return enc.Encode(messages)
 }
 
-func writeJSONThreadMessages(w io.Writer, messages []coresingle.ThreadMessage) error {
+func writeJSONThreadMessages(w io.Writer, messages []coresingle.ThreadMessage, pretty bool) error {
 	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
+	if pretty {
+		enc.SetIndent("", "  ")
+	}
 	return enc.Encode(messages)
 }
 
-func writeJSONTraceSummaries(w io.Writer, runs []coretraces.Summary) error {
+func writeJSONTraceSummaries(w io.Writer, runs []coretraces.Summary, pretty bool) error {
 	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
+	if pretty {
+		enc.SetIndent("", "  ")
+	}
 	return enc.Encode(runs)
 }
 
-func writeJSONThreadList(w io.Writer, threads []corethreads.ThreadData) error {
+func writeJSONThreadList(w io.Writer, threads []corethreads.ThreadData, pretty bool) error {
 	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
+	if pretty {
+		enc.SetIndent("", "  ")
+	}
 	return enc.Encode(threads)
 }
 

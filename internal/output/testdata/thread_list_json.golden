@@ -1,0 +1,15 @@
+[
+  {
+    "thread_id": "thread-1",
+    "messages": [
+      {
+        "role": "user",
+        "content": "hello"
+      },
+      {
+        "role": "assistant",
+        "content": "world"
+      }
+    ]
+  }
+]

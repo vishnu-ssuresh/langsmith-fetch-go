@@ -1,0 +1,4 @@
+Thread: thread-1
+  [1] {"role":"user","content":"hello"}
+  [2] {"role":"assistant","content":"world"}
+
