@@ -30,7 +30,9 @@ func Execute(args []string, stdout io.Writer, stderr io.Writer, deps Deps) error
 		return nil
 	case "traces":
 		return runTraces(args[1:], stdout, stderr, deps, cfg)
-	case "trace", "thread", "threads", "config":
+	case "thread":
+		return runThread(args[1:], stdout, stderr, deps, cfg)
+	case "trace", "threads", "config":
 		return fmt.Errorf("command %q not implemented yet", args[0])
 	default:
 		return fmt.Errorf("unknown command %q", args[0])

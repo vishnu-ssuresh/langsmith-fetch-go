@@ -52,10 +52,10 @@ func TestExecute_UnknownCommand(t *testing.T) {
 	}
 }
 
-func TestExecute_ThreadCommandIsStubbed(t *testing.T) {
+func TestExecute_TraceCommandIsStubbed(t *testing.T) {
 	t.Parallel()
 
-	err := Execute([]string{"thread"}, &bytes.Buffer{}, &bytes.Buffer{}, Deps{
+	err := Execute([]string{"trace"}, &bytes.Buffer{}, &bytes.Buffer{}, Deps{
 		LoadConfig: func() config.Values { return config.Values{APIKey: "test"} },
 	})
 	if err == nil {
