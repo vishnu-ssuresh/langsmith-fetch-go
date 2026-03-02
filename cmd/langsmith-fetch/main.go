@@ -1,3 +1,4 @@
+// main.go contains the langsmith-fetch CLI process entrypoint.
 package main
 
 import (

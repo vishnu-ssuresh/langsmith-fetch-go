@@ -1,3 +1,4 @@
+// root_test.go verifies root command behavior and dispatch errors.
 package cmd
 
 import (

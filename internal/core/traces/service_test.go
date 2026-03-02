@@ -1,3 +1,4 @@
+// service_test.go validates trace service requests and response handling.
 package traces
 
 import (

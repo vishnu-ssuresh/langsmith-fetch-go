@@ -1,3 +1,4 @@
+// service.go implements trace listing via LangSmith transport.
 package traces
 
 import (

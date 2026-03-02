@@ -1,3 +1,4 @@
+// env.go loads runtime configuration values from environment variables.
 package config
 
 import (

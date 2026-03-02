@@ -1,3 +1,4 @@
+// service.go implements thread message retrieval via LangSmith transport.
 package threads
 
 import (

@@ -1,3 +1,4 @@
+// deps.go wires production dependencies for command handlers.
 package cmd
 
 import (

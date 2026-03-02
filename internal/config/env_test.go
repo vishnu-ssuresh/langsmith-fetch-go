@@ -1,3 +1,4 @@
+// env_test.go verifies environment variable precedence and normalization.
 package config
 
 import "testing"

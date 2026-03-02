@@ -1,3 +1,4 @@
+// main_test.go verifies CLI bootstrap behavior in main.
 package main
 
 import "testing"

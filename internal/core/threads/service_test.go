@@ -1,3 +1,4 @@
+// service_test.go validates thread service request and parsing behavior.
 package threads
 
 import (

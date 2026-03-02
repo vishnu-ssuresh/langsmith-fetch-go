@@ -1,3 +1,4 @@
+// traces_test.go covers traces command parsing, wiring, and output.
 package cmd
 
 import (

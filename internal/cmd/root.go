@@ -1,3 +1,4 @@
+// root.go defines root command execution and top-level dispatch.
 package cmd
 
 import (

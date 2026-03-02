@@ -1,3 +1,4 @@
+// traces.go implements the traces command flags, execution, and rendering.
 package cmd
 
 import (
