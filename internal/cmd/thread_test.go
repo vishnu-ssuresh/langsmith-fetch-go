@@ -9,16 +9,16 @@ import (
 	"testing"
 
 	"langsmith-fetch-go/internal/config"
-	corethreads "langsmith-fetch-go/internal/core/threads"
+	coresingle "langsmith-fetch-go/internal/core/single"
 )
 
 type fakeThreadGetter struct {
-	params   corethreads.GetParams
-	messages []corethreads.Message
+	params   coresingle.ThreadParams
+	messages []coresingle.ThreadMessage
 	err      error
 }
 
-func (f *fakeThreadGetter) GetMessages(_ context.Context, params corethreads.GetParams) ([]corethreads.Message, error) {
+func (f *fakeThreadGetter) GetMessages(_ context.Context, params coresingle.ThreadParams) ([]coresingle.ThreadMessage, error) {
 	f.params = params
 	if f.err != nil {
 		return nil, f.err
@@ -66,7 +66,7 @@ func TestRunThread_ParsesArgsAndCallsService(t *testing.T) {
 	t.Parallel()
 
 	fake := &fakeThreadGetter{
-		messages: []corethreads.Message{
+		messages: []coresingle.ThreadMessage{
 			[]byte(`{"role":"user","content":"hello"}`),
 		},
 	}
@@ -137,7 +137,7 @@ func TestRunThread_PrettyOutput(t *testing.T) {
 	t.Parallel()
 
 	fake := &fakeThreadGetter{
-		messages: []corethreads.Message{
+		messages: []coresingle.ThreadMessage{
 			[]byte(`{"role":"assistant","content":"hi"}`),
 		},
 	}
@@ -167,7 +167,7 @@ func TestRunThread_PrettyOutput(t *testing.T) {
 func TestRunThread_UsesConfigProjectUUID(t *testing.T) {
 	t.Parallel()
 
-	fake := &fakeThreadGetter{messages: []corethreads.Message{}}
+	fake := &fakeThreadGetter{messages: []coresingle.ThreadMessage{}}
 	err := runThread(
 		[]string{"--thread-id", "thread-123", "--format", "json"},
 		&bytes.Buffer{},
@@ -188,7 +188,7 @@ func TestRunThread_UsesConfigProjectUUID(t *testing.T) {
 func TestRunThread_ResolvesProjectName(t *testing.T) {
 	t.Parallel()
 
-	fake := &fakeThreadGetter{messages: []corethreads.Message{}}
+	fake := &fakeThreadGetter{messages: []coresingle.ThreadMessage{}}
 	project := &fakeProjectResolver{id: "resolved-project-id"}
 
 	err := runThread(

@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"langsmith-fetch-go/internal/config"
-	corethreads "langsmith-fetch-go/internal/core/threads"
+	coresingle "langsmith-fetch-go/internal/core/single"
 )
 
 type threadOptions struct {
@@ -21,7 +21,7 @@ type threadOptions struct {
 }
 
 type threadGetter interface {
-	GetMessages(context.Context, corethreads.GetParams) ([]corethreads.Message, error)
+	GetMessages(context.Context, coresingle.ThreadParams) ([]coresingle.ThreadMessage, error)
 }
 
 func runThread(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cfg config.Values) error {
@@ -56,7 +56,7 @@ func runThread(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cfg
 		return fmt.Errorf("initialize threads service: %w", err)
 	}
 
-	messages, err := getter.GetMessages(context.Background(), corethreads.GetParams{
+	messages, err := getter.GetMessages(context.Background(), coresingle.ThreadParams{
 		ThreadID:  opts.threadID,
 		ProjectID: projectID,
 	})
@@ -76,7 +76,7 @@ func runThread(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cfg
 	}
 }
 
-func printThreadPretty(w io.Writer, messages []corethreads.Message) error {
+func printThreadPretty(w io.Writer, messages []coresingle.ThreadMessage) error {
 	if len(messages) == 0 {
 		fmt.Fprintln(w, "No thread messages found.")
 		return nil

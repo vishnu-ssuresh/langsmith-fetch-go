@@ -61,7 +61,7 @@ func NewDeps() Deps {
 			if err != nil {
 				return nil, err
 			}
-			return corethreads.New(threadsAccessor)
+			return coresingle.NewThreadService(threadsAccessor)
 		},
 		NewThreadsLister: func(cfg config.Values) (threadsLister, error) {
 			client, err := newSDKClient(cfg)
