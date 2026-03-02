@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -183,5 +185,40 @@ func TestRunTrace_FlagFormatOverridesConfigDefault(t *testing.T) {
 	}
 	if got := out.String(); !strings.Contains(got, "[1] {\"role\":\"assistant\"") {
 		t.Fatalf("stdout = %q, want pretty output from explicit --format", got)
+	}
+}
+
+func TestRunTrace_WritesSingleFile(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeTraceGetter{
+		messages: []coresingle.Message{
+			[]byte(`{"role":"user","content":"hello"}`),
+		},
+	}
+
+	outFile := filepath.Join(t.TempDir(), "trace.json")
+	var out bytes.Buffer
+	err := runTrace(
+		[]string{"--trace-id", "trace-123", "--format", "json", "--file", outFile},
+		&out,
+		&bytes.Buffer{},
+		Deps{
+			NewTraceGetter: func(config.Values) (traceGetter, error) { return fake, nil },
+		},
+		config.Values{APIKey: "test"},
+	)
+	if err != nil {
+		t.Fatalf("runTrace() error = %v", err)
+	}
+	if out.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty when --file is used", out.String())
+	}
+	data, err := os.ReadFile(outFile)
+	if err != nil {
+		t.Fatalf("os.ReadFile() error = %v", err)
+	}
+	if !strings.Contains(string(data), "\"role\": \"user\"") {
+		t.Fatalf("file = %q, want JSON trace output", string(data))
 	}
 }

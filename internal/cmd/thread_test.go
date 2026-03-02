@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -236,5 +238,45 @@ func TestRunThread_ResolvesProjectName(t *testing.T) {
 	}
 	if fake.params.ProjectID != "resolved-project-id" {
 		t.Fatalf("ProjectID = %q, want %q", fake.params.ProjectID, "resolved-project-id")
+	}
+}
+
+func TestRunThread_WritesSingleFile(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeThreadGetter{
+		messages: []coresingle.ThreadMessage{
+			[]byte(`{"role":"assistant","content":"ok"}`),
+		},
+	}
+
+	outFile := filepath.Join(t.TempDir(), "thread.json")
+	var out bytes.Buffer
+	err := runThread(
+		[]string{
+			"--project-id", "project-123",
+			"--thread-id", "thread-123",
+			"--format", "json",
+			"--file", outFile,
+		},
+		&out,
+		&bytes.Buffer{},
+		Deps{
+			NewThreadGetter: func(config.Values) (threadGetter, error) { return fake, nil },
+		},
+		config.Values{APIKey: "test"},
+	)
+	if err != nil {
+		t.Fatalf("runThread() error = %v", err)
+	}
+	if out.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty when --file is used", out.String())
+	}
+	data, err := os.ReadFile(outFile)
+	if err != nil {
+		t.Fatalf("os.ReadFile() error = %v", err)
+	}
+	if !strings.Contains(string(data), "\"role\": \"assistant\"") {
+		t.Fatalf("file = %q, want JSON thread output", string(data))
 	}
 }

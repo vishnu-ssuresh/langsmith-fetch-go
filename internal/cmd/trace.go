@@ -2,6 +2,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
@@ -10,12 +11,14 @@ import (
 
 	"langsmith-fetch-go/internal/config"
 	coresingle "langsmith-fetch-go/internal/core/single"
+	"langsmith-fetch-go/internal/files"
 	"langsmith-fetch-go/internal/output"
 )
 
 type traceOptions struct {
-	traceID string
-	format  string
+	traceID    string
+	format     string
+	outputFile string
 }
 
 type traceGetter interface {
@@ -34,6 +37,7 @@ func runTrace(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cfg 
 		configuredDefaultFormat(cfg.DefaultFormat),
 		"Output format: pretty|json|raw",
 	)
+	fs.StringVar(&opts.outputFile, "file", "", "Write output to a file instead of stdout")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -58,5 +62,14 @@ func runTrace(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cfg 
 	if err != nil {
 		return fmt.Errorf("fetch trace: %w", err)
 	}
+
+	if opts.outputFile != "" {
+		var out bytes.Buffer
+		if err := output.WriteTraceMessages(&out, opts.format, messages); err != nil {
+			return err
+		}
+		return files.WriteFile(opts.outputFile, out.Bytes())
+	}
+
 	return output.WriteTraceMessages(stdout, opts.format, messages)
 }

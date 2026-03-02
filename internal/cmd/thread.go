@@ -2,6 +2,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"flag"
@@ -10,13 +11,15 @@ import (
 
 	"langsmith-fetch-go/internal/config"
 	coresingle "langsmith-fetch-go/internal/core/single"
+	"langsmith-fetch-go/internal/files"
 	"langsmith-fetch-go/internal/output"
 )
 
 type threadOptions struct {
-	projectID string
-	threadID  string
-	format    string
+	projectID  string
+	threadID   string
+	format     string
+	outputFile string
 }
 
 type threadGetter interface {
@@ -37,6 +40,7 @@ func runThread(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cfg
 		configuredDefaultFormat(cfg.DefaultFormat),
 		"Output format: pretty|json|raw",
 	)
+	fs.StringVar(&opts.outputFile, "file", "", "Write output to a file instead of stdout")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -67,5 +71,14 @@ func runThread(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cfg
 	if err != nil {
 		return fmt.Errorf("fetch thread: %w", err)
 	}
+
+	if opts.outputFile != "" {
+		var out bytes.Buffer
+		if err := output.WriteThreadMessages(&out, opts.format, messages); err != nil {
+			return err
+		}
+		return files.WriteFile(opts.outputFile, out.Bytes())
+	}
+
 	return output.WriteThreadMessages(stdout, opts.format, messages)
 }

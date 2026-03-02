@@ -42,6 +42,7 @@ func runThreads(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cf
 	fs.StringVar(&opts.projectID, "project-id", "", "Project UUID")
 	fs.StringVar(&opts.projectID, "project-uuid", "", "Project UUID")
 	fs.IntVar(&opts.limit, "limit", 20, "Max threads to return")
+	fs.IntVar(&opts.limit, "n", 20, "Max threads to return (shorthand)")
 	fs.IntVar(
 		&opts.lastNMinutes,
 		"last-n-minutes",

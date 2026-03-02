@@ -73,6 +73,30 @@ func TestRunTraces_ParsesArgsAndCallsService(t *testing.T) {
 	}
 }
 
+func TestRunTraces_ParsesShortLimitFlag(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeTracesLister{
+		runs: []coretraces.Summary{},
+	}
+
+	err := runTraces(
+		[]string{"--project-id", "project-123", "-n", "3"},
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		Deps{
+			NewTracesLister: func(config.Values) (tracesLister, error) { return fake, nil },
+		},
+		config.Values{APIKey: "test"},
+	)
+	if err != nil {
+		t.Fatalf("runTraces() error = %v", err)
+	}
+	if fake.params.Limit != 3 {
+		t.Fatalf("Limit = %d, want 3", fake.params.Limit)
+	}
+}
+
 func TestRunTraces_InitializeError(t *testing.T) {
 	t.Parallel()
 

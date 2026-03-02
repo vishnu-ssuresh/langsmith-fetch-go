@@ -76,6 +76,30 @@ func TestRunThreads_ParsesArgsAndCallsService(t *testing.T) {
 	}
 }
 
+func TestRunThreads_ParsesShortLimitFlag(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeThreadsLister{
+		threads: []corethreads.ThreadData{},
+	}
+
+	err := runThreads(
+		[]string{"--project-id", "project-123", "-n", "3"},
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		Deps{
+			NewThreadsLister: func(config.Values) (threadsLister, error) { return fake, nil },
+		},
+		config.Values{APIKey: "test"},
+	)
+	if err != nil {
+		t.Fatalf("runThreads() error = %v", err)
+	}
+	if fake.params.Limit != 3 {
+		t.Fatalf("Limit = %d, want 3", fake.params.Limit)
+	}
+}
+
 func TestRunThreads_UsesConfigProjectUUID(t *testing.T) {
 	t.Parallel()
 
