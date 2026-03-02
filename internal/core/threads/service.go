@@ -1,25 +1,20 @@
-// service.go implements thread message retrieval via LangSmith transport.
+// service.go orchestrates thread fetch flows using the threads domain accessor.
 package threads
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/url"
-	"strings"
 
-	"langsmith-sdk/go/langsmith/transport"
+	langsmiththreads "langsmith-fetch-go/internal/langsmith/threads"
 )
 
-// Doer is the minimal transport contract used by the threads service.
-type Doer interface {
-	Do(context.Context, transport.Request) (transport.Response, error)
+type threadsAccessor interface {
+	GetMessages(context.Context, langsmiththreads.GetMessagesParams) ([]langsmiththreads.Message, error)
 }
 
 // Service handles thread-oriented API calls.
 type Service struct {
-	doer Doer
+	threads threadsAccessor
 }
 
 // GetParams controls thread fetch behavior.
@@ -28,18 +23,15 @@ type GetParams struct {
 	ProjectID string
 }
 
-// Message is a raw JSON LangSmith message payload.
-//
-// We keep messages as raw JSON because schemas can vary across models/tools;
-// this preserves payload fidelity without untyped interface values.
-type Message = json.RawMessage
+// Message is the thread message type returned by the threads accessor.
+type Message = langsmiththreads.Message
 
 // New creates a threads service.
-func New(doer Doer) (*Service, error) {
-	if doer == nil {
-		return nil, fmt.Errorf("threads: doer is required")
+func New(accessor threadsAccessor) (*Service, error) {
+	if accessor == nil {
+		return nil, fmt.Errorf("threads: threads accessor is required")
 	}
-	return &Service{doer: doer}, nil
+	return &Service{threads: accessor}, nil
 }
 
 // GetMessages fetches and parses thread messages.
@@ -51,50 +43,12 @@ func (s *Service) GetMessages(ctx context.Context, params GetParams) ([]Message,
 		return nil, fmt.Errorf("threads: project id is required")
 	}
 
-	resp, err := s.doer.Do(ctx, transport.Request{
-		Method: http.MethodGet,
-		Path:   fmt.Sprintf("/runs/threads/%s", url.PathEscape(params.ThreadID)),
-		Query: url.Values{
-			"select":     []string{"all_messages"},
-			"session_id": []string{params.ProjectID},
-		},
+	messages, err := s.threads.GetMessages(ctx, langsmiththreads.GetMessagesParams{
+		ThreadID:  params.ThreadID,
+		ProjectID: params.ProjectID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("threads: fetch thread: %w", err)
 	}
-	if resp.StatusCode >= http.StatusBadRequest {
-		return nil, fmt.Errorf(
-			"threads: fetch thread returned status %d: %s",
-			resp.StatusCode,
-			string(resp.Body),
-		)
-	}
-
-	var payload struct {
-		Previews struct {
-			AllMessages string `json:"all_messages"`
-		} `json:"previews"`
-	}
-	if err := json.Unmarshal(resp.Body, &payload); err != nil {
-		return nil, fmt.Errorf("threads: decode response: %w", err)
-	}
-	if payload.Previews.AllMessages == "" {
-		return nil, fmt.Errorf("threads: response missing previews.all_messages")
-	}
-
-	parts := strings.Split(payload.Previews.AllMessages, "\n\n")
-	messages := make([]Message, 0, len(parts))
-	for i, part := range parts {
-		chunk := strings.TrimSpace(part)
-		if chunk == "" {
-			continue
-		}
-		var msg json.RawMessage
-		if err := json.Unmarshal([]byte(chunk), &msg); err != nil {
-			return nil, fmt.Errorf("threads: decode message %d: %w", i, err)
-		}
-		messages = append(messages, Message(msg))
-	}
-
 	return messages, nil
 }
