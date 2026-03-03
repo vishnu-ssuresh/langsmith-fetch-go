@@ -6,9 +6,16 @@
 # Go build and test artifacts
 bin/
 dist/
+langsmith-fetch
 *.test
 *.out
 coverage.out
+
+# Benchmark raw artifacts (keep markdown summaries)
+docs/benchmarks/**/environment.json
+docs/benchmarks/**/runs.csv
+docs/benchmarks/**/summary.json
+docs/benchmarks/**/startup_summary.json
 
 # IDE and OS files
 .DS_Store

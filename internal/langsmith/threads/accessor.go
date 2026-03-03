@@ -35,7 +35,7 @@ func NewAccessor(client *langsmith.Client) (*Accessor, error) {
 // threadResponse matches the LangSmith thread API response shape.
 type threadResponse struct {
 	Previews struct {
-		AllMessages string `json:"all_messages"`
+		AllMessages *string `json:"all_messages"`
 	} `json:"previews"`
 }
 
@@ -60,11 +60,14 @@ func (a *Accessor) GetMessages(ctx context.Context, params GetMessagesParams) ([
 	if err != nil {
 		return nil, fmt.Errorf("threads: fetch thread: %w", err)
 	}
-	if payload.Previews.AllMessages == "" {
+	if payload.Previews.AllMessages == nil {
 		return nil, fmt.Errorf("threads: response missing previews.all_messages")
 	}
+	if strings.TrimSpace(*payload.Previews.AllMessages) == "" {
+		return []Message{}, nil
+	}
 
-	parts := strings.Split(payload.Previews.AllMessages, "\n\n")
+	parts := strings.Split(*payload.Previews.AllMessages, "\n\n")
 	messages := make([]Message, 0, len(parts))
 	for i, part := range parts {
 		chunk := strings.TrimSpace(part)

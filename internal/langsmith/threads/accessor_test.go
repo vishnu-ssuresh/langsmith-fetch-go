@@ -125,6 +125,26 @@ func TestGetMessages_MissingAllMessages(t *testing.T) {
 	}
 }
 
+func TestGetMessages_EmptyAllMessagesIsAllowed(t *testing.T) {
+	t.Parallel()
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"previews":{"all_messages":""}}`)
+	})
+	accessor, _ := NewAccessor(client)
+
+	messages, err := accessor.GetMessages(context.Background(), GetMessagesParams{
+		ThreadID:  "thread-123",
+		ProjectID: "project-123",
+	})
+	if err != nil {
+		t.Fatalf("GetMessages() error = %v, want nil", err)
+	}
+	if len(messages) != 0 {
+		t.Fatalf("len(messages) = %d, want 0", len(messages))
+	}
+}
+
 func TestGetMessages_PropagatesError(t *testing.T) {
 	t.Parallel()
 	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
