@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	langsmith "langsmith-sdk/go/langsmith"
 	"langsmith-sdk/go/langsmith/transport"
 )
 
@@ -188,6 +189,31 @@ func TestListByRuns_StatusError(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "status 400") {
 		t.Fatalf("ListByRuns() error = %v, want status error", err)
+	}
+}
+
+func TestListByRuns_StatusErrorMapsTypedErrors(t *testing.T) {
+	t.Parallel()
+
+	doer := &fakeDoer{
+		resp: transport.Response{
+			StatusCode: http.StatusTooManyRequests,
+			Body:       []byte("rate limited"),
+		},
+	}
+	accessor, err := NewAccessor(doer)
+	if err != nil {
+		t.Fatalf("NewAccessor() error = %v", err)
+	}
+
+	_, err = accessor.ListByRuns(context.Background(), ListParams{
+		RunIDs: []string{"run-1"},
+	})
+	if err == nil {
+		t.Fatal("ListByRuns() error = nil, want non-nil")
+	}
+	if !errors.Is(err, langsmith.ErrRateLimited) {
+		t.Fatalf("ListByRuns() error = %v, want errors.Is(_, ErrRateLimited)", err)
 	}
 }
 

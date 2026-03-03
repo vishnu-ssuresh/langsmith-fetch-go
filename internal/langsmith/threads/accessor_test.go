@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	langsmith "langsmith-sdk/go/langsmith"
 	"langsmith-sdk/go/langsmith/transport"
 )
 
@@ -176,6 +177,32 @@ func TestGetMessages_StatusError(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "status 400") {
 		t.Fatalf("GetMessages() error = %v, want status error", err)
+	}
+}
+
+func TestGetMessages_StatusErrorMapsTypedErrors(t *testing.T) {
+	t.Parallel()
+
+	doer := &fakeDoer{
+		resp: transport.Response{
+			StatusCode: http.StatusNotFound,
+			Body:       []byte("not found"),
+		},
+	}
+	accessor, err := NewAccessor(doer)
+	if err != nil {
+		t.Fatalf("NewAccessor() error = %v", err)
+	}
+
+	_, err = accessor.GetMessages(context.Background(), GetMessagesParams{
+		ThreadID:  "thread-123",
+		ProjectID: "project-123",
+	})
+	if err == nil {
+		t.Fatal("GetMessages() error = nil, want non-nil")
+	}
+	if !errors.Is(err, langsmith.ErrNotFound) {
+		t.Fatalf("GetMessages() error = %v, want errors.Is(_, ErrNotFound)", err)
 	}
 }
 

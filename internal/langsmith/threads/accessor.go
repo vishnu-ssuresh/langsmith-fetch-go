@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"langsmith-sdk/go/langsmith/transport"
+
+	"langsmith-fetch-go/internal/langsmith/statuserr"
 )
 
 // Doer is the minimal transport contract used by the threads accessor.
@@ -63,11 +65,7 @@ func (a *Accessor) GetMessages(ctx context.Context, params GetMessagesParams) ([
 		return nil, fmt.Errorf("threads: fetch thread: %w", err)
 	}
 	if resp.StatusCode >= http.StatusBadRequest {
-		return nil, fmt.Errorf(
-			"threads: fetch thread returned status %d: %s",
-			resp.StatusCode,
-			string(resp.Body),
-		)
+		return nil, statuserr.Wrap("threads: fetch thread", resp.StatusCode, resp.Body)
 	}
 
 	var payload struct {

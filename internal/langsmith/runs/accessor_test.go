@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	langsmith "langsmith-sdk/go/langsmith"
 	"langsmith-sdk/go/langsmith/transport"
 )
 
@@ -197,6 +198,48 @@ func TestQueryRoot_StatusError(t *testing.T) {
 	_, err = accessor.QueryRoot(context.Background(), QueryRootParams{ProjectID: "project-123"})
 	if err == nil || !strings.Contains(err.Error(), "status 400") {
 		t.Fatalf("QueryRoot() error = %v, want status error", err)
+	}
+}
+
+func TestQueryRoot_StatusErrorMapsTypedErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		status int
+		want   error
+	}{
+		{name: "unauthorized", status: http.StatusUnauthorized, want: langsmith.ErrUnauthorized},
+		{name: "forbidden", status: http.StatusForbidden, want: langsmith.ErrForbidden},
+		{name: "not found", status: http.StatusNotFound, want: langsmith.ErrNotFound},
+		{name: "rate limited", status: http.StatusTooManyRequests, want: langsmith.ErrRateLimited},
+		{name: "transient", status: http.StatusInternalServerError, want: langsmith.ErrTransient},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			doer := &fakeDoer{
+				resp: transport.Response{
+					StatusCode: tt.status,
+					Body:       []byte("mock error"),
+				},
+			}
+			accessor, err := NewAccessor(doer)
+			if err != nil {
+				t.Fatalf("NewAccessor() error = %v", err)
+			}
+
+			_, err = accessor.QueryRoot(context.Background(), QueryRootParams{ProjectID: "project-123"})
+			if err == nil {
+				t.Fatal("QueryRoot() error = nil, want non-nil")
+			}
+			if !errors.Is(err, tt.want) {
+				t.Fatalf("QueryRoot() error = %v, want errors.Is(_, %v)", err, tt.want)
+			}
+		})
 	}
 }
 

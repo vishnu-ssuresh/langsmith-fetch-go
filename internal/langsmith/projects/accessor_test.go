@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	langsmith "langsmith-sdk/go/langsmith"
 	"langsmith-sdk/go/langsmith/transport"
 )
 
@@ -171,6 +172,29 @@ func TestResolveProjectUUID_StatusError(t *testing.T) {
 	_, err = accessor.ResolveProjectUUID(context.Background(), "my-project")
 	if err == nil || !strings.Contains(err.Error(), "status 404") {
 		t.Fatalf("ResolveProjectUUID() error = %v, want status error", err)
+	}
+}
+
+func TestResolveProjectUUID_StatusErrorMapsTypedErrors(t *testing.T) {
+	t.Parallel()
+
+	doer := &fakeDoer{
+		resp: transport.Response{
+			StatusCode: http.StatusForbidden,
+			Body:       []byte("forbidden"),
+		},
+	}
+	accessor, err := NewAccessor(doer)
+	if err != nil {
+		t.Fatalf("NewAccessor() error = %v", err)
+	}
+
+	_, err = accessor.ResolveProjectUUID(context.Background(), "my-project")
+	if err == nil {
+		t.Fatal("ResolveProjectUUID() error = nil, want non-nil")
+	}
+	if !errors.Is(err, langsmith.ErrForbidden) {
+		t.Fatalf("ResolveProjectUUID() error = %v, want errors.Is(_, ErrForbidden)", err)
 	}
 }
 

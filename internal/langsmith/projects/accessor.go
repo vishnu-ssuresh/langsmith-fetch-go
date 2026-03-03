@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"langsmith-sdk/go/langsmith/transport"
+
+	"langsmith-fetch-go/internal/langsmith/statuserr"
 )
 
 // Doer is the minimal transport contract used by the projects accessor.
@@ -54,11 +56,7 @@ func (a *Accessor) ResolveProjectUUID(ctx context.Context, projectName string) (
 		return "", fmt.Errorf("projects: lookup project: %w", err)
 	}
 	if resp.StatusCode >= http.StatusBadRequest {
-		return "", fmt.Errorf(
-			"projects: lookup project returned status %d: %s",
-			resp.StatusCode,
-			string(resp.Body),
-		)
+		return "", statuserr.Wrap("projects: lookup project", resp.StatusCode, resp.Body)
 	}
 
 	projectID, parseErr := parseProjectID(resp.Body)

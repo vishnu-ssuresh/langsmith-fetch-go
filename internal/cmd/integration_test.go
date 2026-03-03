@@ -4,11 +4,15 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+
+	langsmith "langsmith-sdk/go/langsmith"
 
 	"langsmith-fetch-go/internal/config"
 )
@@ -454,5 +458,159 @@ func TestExecute_ConfigShow_Integration(t *testing.T) {
 	}
 	if stderr.Len() != 0 {
 		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestExecute_Trace_Integration_RetriesOnRateLimit(t *testing.T) {
+	t.Parallel()
+
+	var attempt atomic.Int64
+	server := newMockLangSmithServer(t, func(w http.ResponseWriter, req capturedRequest) {
+		current := attempt.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+
+		if current <= 2 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = io.WriteString(w, `{"error":"rate limited"}`)
+			return
+		}
+		_, _ = io.WriteString(
+			w,
+			`{"id":"trace-123","messages":[{"role":"user","content":"hello"}]}`,
+		)
+	})
+	defer server.Close()
+
+	deps := NewDeps()
+	deps.LoadConfig = func() config.Values {
+		return config.Values{
+			APIKey:   "integration-api-key",
+			Endpoint: server.URL,
+		}
+	}
+
+	var stdout bytes.Buffer
+	err := Execute(
+		[]string{"trace", "--trace-id", "trace-123", "--format", "json"},
+		&stdout,
+		&bytes.Buffer{},
+		deps,
+	)
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if got := attempt.Load(); got != 3 {
+		t.Fatalf("attempts = %d, want 3", got)
+	}
+	if got := stdout.String(); !strings.Contains(got, `"role": "user"`) {
+		t.Fatalf("stdout = %q, want JSON trace output", got)
+	}
+}
+
+func TestExecute_Trace_Integration_RetriesOnServerError(t *testing.T) {
+	t.Parallel()
+
+	var attempt atomic.Int64
+	server := newMockLangSmithServer(t, func(w http.ResponseWriter, req capturedRequest) {
+		current := attempt.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+
+		if current == 1 {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = io.WriteString(w, `{"error":"transient"}`)
+			return
+		}
+		_, _ = io.WriteString(
+			w,
+			`{"id":"trace-123","messages":[{"role":"assistant","content":"ok"}]}`,
+		)
+	})
+	defer server.Close()
+
+	deps := NewDeps()
+	deps.LoadConfig = func() config.Values {
+		return config.Values{
+			APIKey:   "integration-api-key",
+			Endpoint: server.URL,
+		}
+	}
+
+	var stdout bytes.Buffer
+	err := Execute(
+		[]string{"trace", "--trace-id", "trace-123", "--format", "json"},
+		&stdout,
+		&bytes.Buffer{},
+		deps,
+	)
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if got := attempt.Load(); got != 2 {
+		t.Fatalf("attempts = %d, want 2", got)
+	}
+	if got := stdout.String(); !strings.Contains(got, `"role": "assistant"`) {
+		t.Fatalf("stdout = %q, want JSON trace output", got)
+	}
+}
+
+func TestExecute_Trace_Integration_SurfacesTypedUnauthorizedError(t *testing.T) {
+	t.Parallel()
+
+	var attempt atomic.Int64
+	server := newMockLangSmithServer(t, func(w http.ResponseWriter, req capturedRequest) {
+		attempt.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = io.WriteString(w, `{"error":"unauthorized"}`)
+	})
+	defer server.Close()
+
+	deps := NewDeps()
+	deps.LoadConfig = func() config.Values {
+		return config.Values{
+			APIKey:   "integration-api-key",
+			Endpoint: server.URL,
+		}
+	}
+
+	err := Execute(
+		[]string{"trace", "--trace-id", "trace-123", "--format", "json"},
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		deps,
+	)
+	if err == nil {
+		t.Fatal("Execute() error = nil, want non-nil")
+	}
+	if got := attempt.Load(); got != 1 {
+		t.Fatalf("attempts = %d, want 1", got)
+	}
+	if !errors.Is(err, langsmith.ErrUnauthorized) {
+		t.Fatalf("Execute() error = %v, want errors.Is(_, ErrUnauthorized)", err)
+	}
+}
+
+func TestExecute_Trace_Integration_NetworkFailure(t *testing.T) {
+	t.Parallel()
+
+	deps := NewDeps()
+	deps.LoadConfig = func() config.Values {
+		return config.Values{
+			APIKey:   "integration-api-key",
+			Endpoint: "http://127.0.0.1:1",
+		}
+	}
+
+	err := Execute(
+		[]string{"trace", "--trace-id", "trace-123", "--format", "json"},
+		&bytes.Buffer{},
+		&bytes.Buffer{},
+		deps,
+	)
+	if err == nil {
+		t.Fatal("Execute() error = nil, want non-nil")
+	}
+	if !strings.Contains(err.Error(), "execute request") {
+		t.Fatalf("Execute() error = %v, want network execute-request error", err)
 	}
 }

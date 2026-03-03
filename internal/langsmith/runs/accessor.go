@@ -9,6 +9,8 @@ import (
 	"net/url"
 
 	"langsmith-sdk/go/langsmith/transport"
+
+	"langsmith-fetch-go/internal/langsmith/statuserr"
 )
 
 // Doer is the minimal transport contract used by the runs accessor.
@@ -142,11 +144,7 @@ func (a *Accessor) QueryRootRuns(ctx context.Context, params QueryRootParams) ([
 		return nil, fmt.Errorf("runs: query runs: %w", err)
 	}
 	if resp.StatusCode >= http.StatusBadRequest {
-		return nil, fmt.Errorf(
-			"runs: query runs returned status %d: %s",
-			resp.StatusCode,
-			string(resp.Body),
-		)
+		return nil, statuserr.Wrap("runs: query runs", resp.StatusCode, resp.Body)
 	}
 
 	var payload struct {
@@ -196,11 +194,7 @@ func (a *Accessor) GetRun(ctx context.Context, params GetRunParams) (Run, error)
 		return Run{}, fmt.Errorf("runs: get run: %w", err)
 	}
 	if resp.StatusCode >= http.StatusBadRequest {
-		return Run{}, fmt.Errorf(
-			"runs: get run returned status %d: %s",
-			resp.StatusCode,
-			string(resp.Body),
-		)
+		return Run{}, statuserr.Wrap("runs: get run", resp.StatusCode, resp.Body)
 	}
 
 	var run Run

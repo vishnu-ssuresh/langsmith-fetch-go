@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"langsmith-sdk/go/langsmith/transport"
+
+	"langsmith-fetch-go/internal/langsmith/statuserr"
 )
 
 const (
@@ -86,11 +88,7 @@ func (a *Accessor) ListByRuns(ctx context.Context, params ListParams) ([]Item, e
 		return nil, fmt.Errorf("feedback: list feedback: %w", err)
 	}
 	if resp.StatusCode >= http.StatusBadRequest {
-		return nil, fmt.Errorf(
-			"feedback: list feedback returned status %d: %s",
-			resp.StatusCode,
-			string(resp.Body),
-		)
+		return nil, statuserr.Wrap("feedback: list feedback", resp.StatusCode, resp.Body)
 	}
 
 	items, err := decodeItems(resp.Body)
