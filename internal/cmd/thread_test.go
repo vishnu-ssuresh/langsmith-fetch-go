@@ -205,7 +205,8 @@ func TestRunThread_PrettyOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runThread() error = %v", err)
 	}
-	if got := out.String(); !strings.Contains(got, "[1] {\"role\":\"assistant\"") {
+	if got := out.String(); !strings.Contains(got, "Thread Messages (1)") ||
+		!strings.Contains(got, "1. assistant") {
 		t.Fatalf("stdout = %q, want pretty message output", got)
 	}
 }

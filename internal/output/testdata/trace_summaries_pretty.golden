@@ -1,1 +1,2 @@
-trace-1	hello	2026-01-01T00:00:00Z
+TRACE ID  NAME   START TIME            STATUS  FEEDBACK
+trace-1   hello  2026-01-01T00:00:00Z  -       0

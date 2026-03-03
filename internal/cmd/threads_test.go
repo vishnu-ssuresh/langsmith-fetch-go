@@ -184,7 +184,9 @@ func TestRunThreads_PrettyOutput(t *testing.T) {
 		t.Fatalf("runThreads() error = %v", err)
 	}
 	got := out.String()
-	if !strings.Contains(got, "Thread: thread-1") || !strings.Contains(got, "[1] {\"role\":\"assistant\"") {
+	if !strings.Contains(got, "Thread thread-1 (1 messages)") ||
+		!strings.Contains(got, "Messages (1)") ||
+		!strings.Contains(got, "1. assistant") {
 		t.Fatalf("stdout = %q, want pretty threads output", got)
 	}
 }

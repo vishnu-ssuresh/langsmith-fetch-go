@@ -1,4 +1,7 @@
-Thread: thread-1
-  [1] {"role":"user","content":"hello"}
-  [2] {"role":"assistant","content":"world"}
+Thread thread-1 (2 messages)
+  Messages (2)
+  1. user
+     hello
+  2. assistant
+     world
 

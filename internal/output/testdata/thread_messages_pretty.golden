@@ -1,2 +1,5 @@
-[1] {"role":"user","content":"hello"}
-[2] {"role":"assistant","content":"world"}
+Thread Messages (2)
+1. user
+   hello
+2. assistant
+   world

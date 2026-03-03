@@ -197,7 +197,8 @@ func TestRunTrace_PrettyOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runTrace() error = %v", err)
 	}
-	if got := out.String(); !strings.Contains(got, "[1] {\"role\":\"assistant\"") {
+	if got := out.String(); !strings.Contains(got, "Trace Messages (1)") ||
+		!strings.Contains(got, "1. assistant") {
 		t.Fatalf("stdout = %q, want pretty message output", got)
 	}
 }
@@ -251,7 +252,8 @@ func TestRunTrace_FlagFormatOverridesConfigDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runTrace() error = %v", err)
 	}
-	if got := out.String(); !strings.Contains(got, "[1] {\"role\":\"assistant\"") {
+	if got := out.String(); !strings.Contains(got, "Trace Messages (1)") ||
+		!strings.Contains(got, "1. assistant") {
 		t.Fatalf("stdout = %q, want pretty output from explicit --format", got)
 	}
 }

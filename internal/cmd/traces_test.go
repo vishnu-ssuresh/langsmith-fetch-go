@@ -156,7 +156,7 @@ func TestRunTraces_PrettyOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runTraces() error = %v", err)
 	}
-	if got := out.String(); !strings.Contains(got, "trace-1\thello") {
+	if got := out.String(); !strings.Contains(got, "TRACE ID") || !strings.Contains(got, "trace-1") {
 		t.Fatalf("stdout = %q, want pretty trace output", got)
 	}
 }
