@@ -1,0 +1,113 @@
+name: CLI CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cli-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-vet:
+    name: Test And Vet
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set Up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Checkout SDK
+        uses: actions/checkout@v4
+        with:
+          repository: vishnu-ssuresh/langsmith-sdk
+          path: langsmith-sdk
+
+      - name: Wire Local SDK Replace
+        run: go mod edit -replace=langsmith-sdk/go=./langsmith-sdk/go
+
+      - name: Unit Tests
+        run: go test ./...
+
+      - name: Race Tests
+        run: go test -race ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Build Check
+        run: go build -trimpath ./cmd/langsmith-fetch
+
+  build-matrix:
+    name: Build ${{ matrix.goos }}-${{ matrix.goarch }}
+    needs: test-and-vet
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            ext: ""
+          - goos: linux
+            goarch: arm64
+            ext: ""
+          - goos: darwin
+            goarch: amd64
+            ext: ""
+          - goos: darwin
+            goarch: arm64
+            ext: ""
+          - goos: windows
+            goarch: amd64
+            ext: .exe
+          - goos: windows
+            goarch: arm64
+            ext: .exe
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set Up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Checkout SDK
+        uses: actions/checkout@v4
+        with:
+          repository: vishnu-ssuresh/langsmith-sdk
+          path: langsmith-sdk
+
+      - name: Wire Local SDK Replace
+        run: go mod edit -replace=langsmith-sdk/go=./langsmith-sdk/go
+
+      - name: Build CLI Binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          mkdir -p dist
+          go build -trimpath -o "dist/langsmith-fetch-${GOOS}-${GOARCH}${{ matrix.ext }}" ./cmd/langsmith-fetch
+
+      - name: Upload Binary Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: langsmith-fetch-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/langsmith-fetch-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}
