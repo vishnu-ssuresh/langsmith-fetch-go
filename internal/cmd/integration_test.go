@@ -3,6 +3,7 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -103,6 +104,96 @@ func TestExecute_Trace_Integration(t *testing.T) {
 
 	if got := stdout.String(); !strings.Contains(got, `"role": "user"`) {
 		t.Fatalf("stdout = %q, want JSON trace message", got)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestExecute_Traces_Integration(t *testing.T) {
+	t.Parallel()
+
+	requestCh := make(chan capturedRequest, 1)
+	server := newMockLangSmithServer(t, func(w http.ResponseWriter, req capturedRequest) {
+		requestCh <- req
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(
+			w,
+			`{"runs":[{"id":"trace-1","name":"Run One","start_time":"2026-01-01T00:00:00Z"},{"id":"trace-2","name":"Run Two","start_time":"2026-01-01T01:00:00Z"}]}`,
+		)
+	})
+	defer server.Close()
+
+	deps := NewDeps()
+	deps.LoadConfig = func() config.Values {
+		return config.Values{
+			APIKey:   "integration-api-key",
+			Endpoint: server.URL,
+		}
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := Execute(
+		[]string{
+			"traces",
+			"--project-uuid", "project-123",
+			"--limit", "2",
+			"--format", "json",
+			"--no-progress",
+		},
+		&stdout,
+		&stderr,
+		deps,
+	)
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	var req capturedRequest
+	select {
+	case req = <-requestCh:
+	default:
+		t.Fatal("mock server did not receive request")
+	}
+
+	if req.Method != http.MethodPost {
+		t.Fatalf("request method = %q, want %q", req.Method, http.MethodPost)
+	}
+	if req.Path != "/runs/query" {
+		t.Fatalf("request path = %q, want %q", req.Path, "/runs/query")
+	}
+	if got := req.Header.Get("X-API-Key"); got != "integration-api-key" {
+		t.Fatalf("X-API-Key = %q, want %q", got, "integration-api-key")
+	}
+
+	var body struct {
+		Session   []string `json:"session"`
+		IsRoot    bool     `json:"is_root"`
+		Limit     int      `json:"limit"`
+		StartTime string   `json:"start_time"`
+	}
+	if err := json.Unmarshal(req.Body, &body); err != nil {
+		t.Fatalf("decode request body: %v", err)
+	}
+	if len(body.Session) != 1 || body.Session[0] != "project-123" {
+		t.Fatalf("session = %#v, want [project-123]", body.Session)
+	}
+	if !body.IsRoot {
+		t.Fatalf("is_root = %v, want true", body.IsRoot)
+	}
+	if body.Limit != 2 {
+		t.Fatalf("limit = %d, want 2", body.Limit)
+	}
+	if body.StartTime != "" {
+		t.Fatalf("start_time = %q, want empty", body.StartTime)
+	}
+
+	if got := stdout.String(); !strings.Contains(got, `"id": "trace-1"`) {
+		t.Fatalf("stdout = %q, want first trace JSON output", got)
+	}
+	if got := stdout.String(); !strings.Contains(got, `"id": "trace-2"`) {
+		t.Fatalf("stdout = %q, want second trace JSON output", got)
 	}
 	if stderr.Len() != 0 {
 		t.Fatalf("stderr = %q, want empty", stderr.String())
