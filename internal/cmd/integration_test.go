@@ -199,3 +199,76 @@ func TestExecute_Traces_Integration(t *testing.T) {
 		t.Fatalf("stderr = %q, want empty", stderr.String())
 	}
 }
+
+func TestExecute_Thread_Integration(t *testing.T) {
+	t.Parallel()
+
+	requestCh := make(chan capturedRequest, 1)
+	server := newMockLangSmithServer(t, func(w http.ResponseWriter, req capturedRequest) {
+		requestCh <- req
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(
+			w,
+			`{"previews":{"all_messages":"{\"role\":\"user\",\"content\":\"hello\"}\n\n{\"role\":\"assistant\",\"content\":\"world\"}"}}`,
+		)
+	})
+	defer server.Close()
+
+	deps := NewDeps()
+	deps.LoadConfig = func() config.Values {
+		return config.Values{
+			APIKey:   "integration-api-key",
+			Endpoint: server.URL,
+		}
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := Execute(
+		[]string{
+			"thread",
+			"--project-uuid", "project-123",
+			"--thread-id", "thread-abc",
+			"--format", "json",
+		},
+		&stdout,
+		&stderr,
+		deps,
+	)
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	var req capturedRequest
+	select {
+	case req = <-requestCh:
+	default:
+		t.Fatal("mock server did not receive request")
+	}
+
+	if req.Method != http.MethodGet {
+		t.Fatalf("request method = %q, want %q", req.Method, http.MethodGet)
+	}
+	if req.Path != "/runs/threads/thread-abc" {
+		t.Fatalf("request path = %q, want %q", req.Path, "/runs/threads/thread-abc")
+	}
+	if !strings.Contains(req.Query, "select=all_messages") {
+		t.Fatalf("request query = %q, want select=all_messages", req.Query)
+	}
+	if !strings.Contains(req.Query, "session_id=project-123") {
+		t.Fatalf("request query = %q, want session_id=project-123", req.Query)
+	}
+	if got := req.Header.Get("X-API-Key"); got != "integration-api-key" {
+		t.Fatalf("X-API-Key = %q, want %q", got, "integration-api-key")
+	}
+
+	if got := stdout.String(); !strings.Contains(got, `"role": "user"`) {
+		t.Fatalf("stdout = %q, want user message JSON output", got)
+	}
+	if got := stdout.String(); !strings.Contains(got, `"role": "assistant"`) {
+		t.Fatalf("stdout = %q, want assistant message JSON output", got)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+}
