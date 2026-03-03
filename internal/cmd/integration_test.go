@@ -614,3 +614,56 @@ func TestExecute_Trace_Integration_NetworkFailure(t *testing.T) {
 		t.Fatalf("Execute() error = %v, want network execute-request error", err)
 	}
 }
+
+func TestExecute_Trace_Integration_UsesSelfHostEndpointFromEnv(t *testing.T) {
+	requestCh := make(chan capturedRequest, 1)
+	server := newMockLangSmithServer(t, func(w http.ResponseWriter, req capturedRequest) {
+		requestCh <- req
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(
+			w,
+			`{"id":"trace-self-host","messages":[{"role":"user","content":"from self host"}]}`,
+		)
+	})
+	defer server.Close()
+
+	t.Setenv("LANGSMITH_API_KEY", "integration-api-key")
+	t.Setenv("LANGSMITH_ENDPOINT", server.URL)
+	t.Setenv("LANGCHAIN_API_KEY", "")
+	t.Setenv("LANGCHAIN_ENDPOINT", "")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := Execute(
+		[]string{"trace", "--trace-id", "trace-self-host", "--format", "json"},
+		&stdout,
+		&stderr,
+		NewDeps(),
+	)
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	var req capturedRequest
+	select {
+	case req = <-requestCh:
+	default:
+		t.Fatal("mock self-host server did not receive request")
+	}
+
+	if req.Method != http.MethodGet {
+		t.Fatalf("request method = %q, want %q", req.Method, http.MethodGet)
+	}
+	if req.Path != "/runs/trace-self-host" {
+		t.Fatalf("request path = %q, want %q", req.Path, "/runs/trace-self-host")
+	}
+	if got := req.Header.Get("X-API-Key"); got != "integration-api-key" {
+		t.Fatalf("X-API-Key = %q, want %q", got, "integration-api-key")
+	}
+	if got := stdout.String(); !strings.Contains(got, `"from self host"`) {
+		t.Fatalf("stdout = %q, want self-host response content", got)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+}
