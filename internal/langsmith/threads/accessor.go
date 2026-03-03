@@ -1,27 +1,18 @@
-// accessor.go implements thread-domain API access via shared SDK transport.
 package threads
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"net/url"
 	"strings"
 
-	"langsmith-sdk/go/langsmith/transport"
-
-	"langsmith-fetch-go/internal/langsmith/statuserr"
+	"github.com/langchain-ai/langsmith-go"
 )
 
-// Doer is the minimal transport contract used by the threads accessor.
-type Doer interface {
-	Do(context.Context, transport.Request) (transport.Response, error)
-}
-
-// Accessor handles thread-oriented API calls.
+// Accessor handles thread-oriented API calls via the official SDK.
 type Accessor struct {
-	doer Doer
+	client *langsmith.Client
 }
 
 // GetMessagesParams controls thread message fetch behavior.
@@ -31,20 +22,25 @@ type GetMessagesParams struct {
 }
 
 // Message is a raw JSON LangSmith message payload.
-//
-// We keep messages as raw JSON because schemas can vary across models/tools;
-// this preserves payload fidelity without untyped interface values.
 type Message = json.RawMessage
 
-// NewAccessor creates a threads accessor.
-func NewAccessor(doer Doer) (*Accessor, error) {
-	if doer == nil {
-		return nil, fmt.Errorf("threads: doer is required")
+// NewAccessor creates a threads accessor backed by the official SDK.
+func NewAccessor(client *langsmith.Client) (*Accessor, error) {
+	if client == nil {
+		return nil, fmt.Errorf("threads: client is required")
 	}
-	return &Accessor{doer: doer}, nil
+	return &Accessor{client: client}, nil
+}
+
+// threadResponse matches the LangSmith thread API response shape.
+type threadResponse struct {
+	Previews struct {
+		AllMessages string `json:"all_messages"`
+	} `json:"previews"`
 }
 
 // GetMessages fetches and parses messages for a single thread.
+// Uses the SDK's generic Get for the undocumented /runs/threads endpoint.
 func (a *Accessor) GetMessages(ctx context.Context, params GetMessagesParams) ([]Message, error) {
 	if params.ThreadID == "" {
 		return nil, fmt.Errorf("threads: thread id is required")
@@ -53,28 +49,16 @@ func (a *Accessor) GetMessages(ctx context.Context, params GetMessagesParams) ([
 		return nil, fmt.Errorf("threads: project id is required")
 	}
 
-	req := transport.NewRequest(
-		http.MethodGet,
-		fmt.Sprintf("/runs/threads/%s", url.PathEscape(params.ThreadID)),
-	).
-		WithQuery("select", "all_messages").
-		WithQuery("session_id", params.ProjectID)
+	path := fmt.Sprintf(
+		"api/v1/runs/threads/%s?select=all_messages&session_id=%s",
+		url.PathEscape(params.ThreadID),
+		url.QueryEscape(params.ProjectID),
+	)
 
-	resp, err := a.doer.Do(ctx, req)
+	var payload threadResponse
+	err := a.client.Get(ctx, path, nil, &payload)
 	if err != nil {
 		return nil, fmt.Errorf("threads: fetch thread: %w", err)
-	}
-	if resp.StatusCode >= http.StatusBadRequest {
-		return nil, statuserr.Wrap("threads: fetch thread", resp.StatusCode, resp.Body)
-	}
-
-	var payload struct {
-		Previews struct {
-			AllMessages string `json:"all_messages"`
-		} `json:"previews"`
-	}
-	if err := json.Unmarshal(resp.Body, &payload); err != nil {
-		return nil, fmt.Errorf("threads: decode response: %w", err)
 	}
 	if payload.Previews.AllMessages == "" {
 		return nil, fmt.Errorf("threads: response missing previews.all_messages")

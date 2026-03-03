@@ -1,32 +1,17 @@
-// accessor.go implements feedback-domain API access via shared SDK transport.
 package feedback
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"strconv"
-	"strings"
 
-	"langsmith-sdk/go/langsmith/transport"
-
-	"langsmith-fetch-go/internal/langsmith/statuserr"
+	"github.com/langchain-ai/langsmith-go"
+	"github.com/langchain-ai/langsmith-go/shared"
 )
 
-const (
-	defaultLimit = 100
-	maxLimit     = 100
-)
-
-// Doer is the minimal transport contract used by the feedback accessor.
-type Doer interface {
-	Do(context.Context, transport.Request) (transport.Response, error)
-}
-
-// Accessor handles feedback-oriented API calls.
+// Accessor handles feedback-oriented API calls via the official SDK.
 type Accessor struct {
-	doer Doer
+	client *langsmith.Client
 }
 
 // ListParams controls feedback list behavior.
@@ -47,88 +32,80 @@ type Item struct {
 	Comment string          `json:"comment"`
 }
 
-// NewAccessor creates a feedback accessor.
-func NewAccessor(doer Doer) (*Accessor, error) {
-	if doer == nil {
-		return nil, fmt.Errorf("feedback: doer is required")
+// NewAccessor creates a feedback accessor backed by the official SDK.
+func NewAccessor(client *langsmith.Client) (*Accessor, error) {
+	if client == nil {
+		return nil, fmt.Errorf("feedback: client is required")
 	}
-	return &Accessor{doer: doer}, nil
+	return &Accessor{client: client}, nil
 }
 
 // ListByRuns lists feedback records for one or more run IDs.
 func (a *Accessor) ListByRuns(ctx context.Context, params ListParams) ([]Item, error) {
-	runIDs := sanitizeStrings(params.RunIDs)
-	if len(runIDs) == 0 {
+	if len(params.RunIDs) == 0 {
 		return nil, fmt.Errorf("feedback: at least one run id is required")
 	}
 
 	limit := params.Limit
 	if limit <= 0 {
-		limit = defaultLimit
+		limit = 100
 	}
-	if limit > maxLimit {
-		limit = maxLimit
-	}
-
-	req := transport.NewRequest(http.MethodGet, "/feedback").
-		WithQuery("limit", strconv.Itoa(limit)).
-		WithQuery("run", runIDs...)
-
-	keys := sanitizeStrings(params.Keys)
-	if len(keys) > 0 {
-		req = req.WithQuery("key", keys...)
-	}
-	source := sanitizeStrings(params.Source)
-	if len(source) > 0 {
-		req = req.WithQuery("source", source...)
+	if limit > 100 {
+		limit = 100
 	}
 
-	resp, err := a.doer.Do(ctx, req)
+	query := langsmith.FeedbackListParams{
+		Run:   langsmith.F[langsmith.FeedbackListParamsRunUnion](langsmith.FeedbackListParamsRunArray(params.RunIDs)),
+		Limit: langsmith.F(int64(limit)),
+	}
+	if len(params.Keys) > 0 {
+		query.Key = langsmith.F(params.Keys)
+	}
+	if len(params.Source) > 0 {
+		sources := make([]langsmith.SourceType, len(params.Source))
+		for i, s := range params.Source {
+			sources[i] = langsmith.SourceType(s)
+		}
+		query.Source = langsmith.F(sources)
+	}
+
+	page, err := a.client.Feedback.List(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("feedback: list feedback: %w", err)
 	}
-	if resp.StatusCode >= http.StatusBadRequest {
-		return nil, statuserr.Wrap("feedback: list feedback", resp.StatusCode, resp.Body)
-	}
 
-	items, err := decodeItems(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("feedback: decode response: %w", err)
+	items := make([]Item, 0)
+	for _, fb := range page.Items {
+		item := Item{
+			ID:      fb.ID,
+			RunID:   fb.RunID,
+			Key:     fb.Key,
+			Comment: fb.Comment,
+		}
+		if fb.Score != nil {
+			item.Score = marshalUnion(fb.Score)
+		}
+		if fb.Value != nil {
+			item.Value = marshalUnion(fb.Value)
+		}
+		items = append(items, item)
 	}
 	return items, nil
 }
 
-func decodeItems(body []byte) ([]Item, error) {
-	var arr []Item
-	if err := json.Unmarshal(body, &arr); err == nil {
-		return arr, nil
+func marshalUnion(v interface{}) json.RawMessage {
+	switch val := v.(type) {
+	case shared.UnionFloat:
+		data, _ := json.Marshal(float64(val))
+		return data
+	case shared.UnionBool:
+		data, _ := json.Marshal(bool(val))
+		return data
+	case shared.UnionString:
+		data, _ := json.Marshal(string(val))
+		return data
+	default:
+		data, _ := json.Marshal(v)
+		return data
 	}
-
-	var wrapped struct {
-		Items    []Item `json:"items"`
-		Results  []Item `json:"results"`
-		Feedback []Item `json:"feedback"`
-	}
-	if err := json.Unmarshal(body, &wrapped); err != nil {
-		return nil, err
-	}
-
-	for _, group := range [][]Item{wrapped.Items, wrapped.Results, wrapped.Feedback} {
-		if len(group) > 0 {
-			return group, nil
-		}
-	}
-	return []Item{}, nil
-}
-
-func sanitizeStrings(values []string) []string {
-	out := make([]string, 0, len(values))
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			continue
-		}
-		out = append(out, value)
-	}
-	return out
 }

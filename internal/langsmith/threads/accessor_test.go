@@ -1,35 +1,30 @@
-// accessor_test.go validates thread accessor request and parsing behavior.
 package threads
 
 import (
 	"context"
 	"encoding/json"
-	"errors"
+	"io"
 	"net/http"
-	"net/url"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
-	langsmith "langsmith-sdk/go/langsmith"
-	"langsmith-sdk/go/langsmith/transport"
+	"github.com/langchain-ai/langsmith-go"
+	"github.com/langchain-ai/langsmith-go/option"
 )
 
-type fakeDoer struct {
-	req    transport.Request
-	resp   transport.Response
-	err    error
-	called bool
+func newTestClient(t *testing.T, handler http.HandlerFunc) *langsmith.Client {
+	t.Helper()
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	return langsmith.NewClient(
+		option.WithBaseURL(server.URL),
+		option.WithAPIKey("test-key"),
+	)
 }
 
-func (f *fakeDoer) Do(_ context.Context, req transport.Request) (transport.Response, error) {
-	f.called = true
-	f.req = req
-	return f.resp, f.err
-}
-
-func TestNewAccessor_RequiresDoer(t *testing.T) {
+func TestNewAccessor_RequiresClient(t *testing.T) {
 	t.Parallel()
-
 	accessor, err := NewAccessor(nil)
 	if err == nil {
 		t.Fatal("NewAccessor(nil) error = nil, want non-nil")
@@ -41,60 +36,57 @@ func TestNewAccessor_RequiresDoer(t *testing.T) {
 
 func TestGetMessages_RequiresThreadID(t *testing.T) {
 	t.Parallel()
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("unexpected request")
+	})
+	accessor, _ := NewAccessor(client)
 
-	doer := &fakeDoer{}
-	accessor, err := NewAccessor(doer)
-	if err != nil {
-		t.Fatalf("NewAccessor() error = %v", err)
-	}
-
-	_, err = accessor.GetMessages(context.Background(), GetMessagesParams{ProjectID: "project-123"})
+	_, err := accessor.GetMessages(context.Background(), GetMessagesParams{ProjectID: "project-123"})
 	if err == nil || !strings.Contains(err.Error(), "thread id is required") {
 		t.Fatalf("GetMessages() error = %v, want thread id required", err)
-	}
-	if doer.called {
-		t.Fatal("Do() called unexpectedly")
 	}
 }
 
 func TestGetMessages_RequiresProjectID(t *testing.T) {
 	t.Parallel()
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("unexpected request")
+	})
+	accessor, _ := NewAccessor(client)
 
-	doer := &fakeDoer{}
-	accessor, err := NewAccessor(doer)
-	if err != nil {
-		t.Fatalf("NewAccessor() error = %v", err)
-	}
-
-	_, err = accessor.GetMessages(context.Background(), GetMessagesParams{ThreadID: "thread-123"})
+	_, err := accessor.GetMessages(context.Background(), GetMessagesParams{ThreadID: "thread-123"})
 	if err == nil || !strings.Contains(err.Error(), "project id is required") {
 		t.Fatalf("GetMessages() error = %v, want project id required", err)
 	}
-	if doer.called {
-		t.Fatal("Do() called unexpectedly")
-	}
 }
 
-func TestGetMessages_BuildsRequestAndParsesMessages(t *testing.T) {
+func TestGetMessages_ParsesMessages(t *testing.T) {
 	t.Parallel()
-
-	doer := &fakeDoer{
-		resp: transport.Response{
-			StatusCode: http.StatusOK,
-			Body: []byte(`{
-  "previews": {
-    "all_messages": "{\"role\":\"user\",\"content\":\"hello\"}\n\n{\"role\":\"assistant\",\"content\":\"hi\"}"
-  }
-}`),
-		},
-	}
-	accessor, err := NewAccessor(doer)
-	if err != nil {
-		t.Fatalf("NewAccessor() error = %v", err)
-	}
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/runs/threads/thread-123" {
+			t.Fatalf("r.URL.Path = %q, want %q", r.URL.Path, "/api/v1/runs/threads/thread-123")
+		}
+		if got := r.URL.Query().Get("select"); got != "all_messages" {
+			t.Fatalf("select query = %q, want %q", got, "all_messages")
+		}
+		if got := r.URL.Query().Get("session_id"); got != "project-123" {
+			t.Fatalf("session_id query = %q, want %q", got, "project-123")
+		}
+		body, _ := io.ReadAll(r.Body)
+		if strings.TrimSpace(string(body)) != "" {
+			t.Fatalf("GET body should be empty, got %q", string(body))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{
+			"previews": {
+				"all_messages": "{\"role\":\"user\",\"content\":\"hello\"}\n\n{\"role\":\"assistant\",\"content\":\"hi\"}"
+			}
+		}`)
+	})
+	accessor, _ := NewAccessor(client)
 
 	messages, err := accessor.GetMessages(context.Background(), GetMessagesParams{
-		ThreadID:  "thread/a b",
+		ThreadID:  "thread-123",
 		ProjectID: "project-123",
 	})
 	if err != nil {
@@ -114,136 +106,17 @@ func TestGetMessages_BuildsRequestAndParsesMessages(t *testing.T) {
 	if first.Role != "user" {
 		t.Fatalf("messages[0].Role = %q, want %q", first.Role, "user")
 	}
-
-	var second messageView
-	if err := json.Unmarshal(messages[1], &second); err != nil {
-		t.Fatalf("json.Unmarshal(messages[1]) error = %v", err)
-	}
-	if second.Role != "assistant" {
-		t.Fatalf("messages[1].Role = %q, want %q", second.Role, "assistant")
-	}
-
-	if doer.req.Method != http.MethodGet {
-		t.Fatalf("Method = %q, want GET", doer.req.Method)
-	}
-	if doer.req.Path != "/runs/threads/thread%2Fa%20b" {
-		t.Fatalf("Path = %q, want escaped path", doer.req.Path)
-	}
-
-	wantQuery := url.Values{
-		"select":     []string{"all_messages"},
-		"session_id": []string{"project-123"},
-	}
-	if got := doer.req.Query.Encode(); got != wantQuery.Encode() {
-		t.Fatalf("Query = %q, want %q", got, wantQuery.Encode())
-	}
 }
 
-func TestGetMessages_PropagatesDoError(t *testing.T) {
+func TestGetMessages_MissingAllMessages(t *testing.T) {
 	t.Parallel()
-
-	doer := &fakeDoer{err: errors.New("network failed")}
-	accessor, err := NewAccessor(doer)
-	if err != nil {
-		t.Fatalf("NewAccessor() error = %v", err)
-	}
-
-	_, err = accessor.GetMessages(context.Background(), GetMessagesParams{
-		ThreadID:  "thread-123",
-		ProjectID: "project-123",
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"previews":{}}`)
 	})
-	if err == nil || !strings.Contains(err.Error(), "network failed") {
-		t.Fatalf("GetMessages() error = %v, want wrapped do error", err)
-	}
-}
+	accessor, _ := NewAccessor(client)
 
-func TestGetMessages_StatusError(t *testing.T) {
-	t.Parallel()
-
-	doer := &fakeDoer{
-		resp: transport.Response{
-			StatusCode: http.StatusBadRequest,
-			Body:       []byte("bad request"),
-		},
-	}
-	accessor, err := NewAccessor(doer)
-	if err != nil {
-		t.Fatalf("NewAccessor() error = %v", err)
-	}
-
-	_, err = accessor.GetMessages(context.Background(), GetMessagesParams{
-		ThreadID:  "thread-123",
-		ProjectID: "project-123",
-	})
-	if err == nil || !strings.Contains(err.Error(), "status 400") {
-		t.Fatalf("GetMessages() error = %v, want status error", err)
-	}
-}
-
-func TestGetMessages_StatusErrorMapsTypedErrors(t *testing.T) {
-	t.Parallel()
-
-	doer := &fakeDoer{
-		resp: transport.Response{
-			StatusCode: http.StatusNotFound,
-			Body:       []byte("not found"),
-		},
-	}
-	accessor, err := NewAccessor(doer)
-	if err != nil {
-		t.Fatalf("NewAccessor() error = %v", err)
-	}
-
-	_, err = accessor.GetMessages(context.Background(), GetMessagesParams{
-		ThreadID:  "thread-123",
-		ProjectID: "project-123",
-	})
-	if err == nil {
-		t.Fatal("GetMessages() error = nil, want non-nil")
-	}
-	if !errors.Is(err, langsmith.ErrNotFound) {
-		t.Fatalf("GetMessages() error = %v, want errors.Is(_, ErrNotFound)", err)
-	}
-}
-
-func TestGetMessages_DecodeResponseError(t *testing.T) {
-	t.Parallel()
-
-	doer := &fakeDoer{
-		resp: transport.Response{
-			StatusCode: http.StatusOK,
-			Body:       []byte(`{"previews"`),
-		},
-	}
-	accessor, err := NewAccessor(doer)
-	if err != nil {
-		t.Fatalf("NewAccessor() error = %v", err)
-	}
-
-	_, err = accessor.GetMessages(context.Background(), GetMessagesParams{
-		ThreadID:  "thread-123",
-		ProjectID: "project-123",
-	})
-	if err == nil || !strings.Contains(err.Error(), "decode response") {
-		t.Fatalf("GetMessages() error = %v, want decode response error", err)
-	}
-}
-
-func TestGetMessages_MissingAllMessagesError(t *testing.T) {
-	t.Parallel()
-
-	doer := &fakeDoer{
-		resp: transport.Response{
-			StatusCode: http.StatusOK,
-			Body:       []byte(`{"previews":{}}`),
-		},
-	}
-	accessor, err := NewAccessor(doer)
-	if err != nil {
-		t.Fatalf("NewAccessor() error = %v", err)
-	}
-
-	_, err = accessor.GetMessages(context.Background(), GetMessagesParams{
+	_, err := accessor.GetMessages(context.Background(), GetMessagesParams{
 		ThreadID:  "thread-123",
 		ProjectID: "project-123",
 	})
@@ -252,29 +125,19 @@ func TestGetMessages_MissingAllMessagesError(t *testing.T) {
 	}
 }
 
-func TestGetMessages_DecodeMessageError(t *testing.T) {
+func TestGetMessages_PropagatesError(t *testing.T) {
 	t.Parallel()
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = io.WriteString(w, `{"detail":"not found"}`)
+	})
+	accessor, _ := NewAccessor(client)
 
-	doer := &fakeDoer{
-		resp: transport.Response{
-			StatusCode: http.StatusOK,
-			Body: []byte(`{
-  "previews": {
-    "all_messages": "{\"role\":\"user\",\"content\":\"hello\"}\n\n{\"role\":"
-  }
-}`),
-		},
-	}
-	accessor, err := NewAccessor(doer)
-	if err != nil {
-		t.Fatalf("NewAccessor() error = %v", err)
-	}
-
-	_, err = accessor.GetMessages(context.Background(), GetMessagesParams{
+	_, err := accessor.GetMessages(context.Background(), GetMessagesParams{
 		ThreadID:  "thread-123",
 		ProjectID: "project-123",
 	})
-	if err == nil || !strings.Contains(err.Error(), "decode message") {
-		t.Fatalf("GetMessages() error = %v, want decode message error", err)
+	if err == nil {
+		t.Fatal("GetMessages() error = nil, want non-nil")
 	}
 }

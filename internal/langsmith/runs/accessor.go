@@ -1,26 +1,18 @@
-// accessor.go implements run-domain API access via shared SDK transport.
 package runs
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"net/url"
+	"time"
 
-	"langsmith-sdk/go/langsmith/transport"
-
-	"langsmith-fetch-go/internal/langsmith/statuserr"
+	"github.com/langchain-ai/langsmith-go"
 )
 
-// Doer is the minimal transport contract used by the runs accessor.
-type Doer interface {
-	Do(context.Context, transport.Request) (transport.Response, error)
-}
-
-// Accessor handles runs-oriented API calls.
+// Accessor handles runs-oriented API calls via the official SDK.
 type Accessor struct {
-	doer Doer
+	client *langsmith.Client
 }
 
 // QueryRootParams controls root-run query behavior.
@@ -83,19 +75,12 @@ type Extra struct {
 	Metadata json.RawMessage `json:"metadata"`
 }
 
-type queryRunsRequest struct {
-	Session   []string `json:"session"`
-	IsRoot    bool     `json:"is_root"`
-	Limit     int      `json:"limit"`
-	StartTime string   `json:"start_time,omitempty"`
-}
-
-// NewAccessor creates a runs accessor.
-func NewAccessor(doer Doer) (*Accessor, error) {
-	if doer == nil {
-		return nil, fmt.Errorf("runs: doer is required")
+// NewAccessor creates a runs accessor backed by the official SDK.
+func NewAccessor(client *langsmith.Client) (*Accessor, error) {
+	if client == nil {
+		return nil, fmt.Errorf("runs: client is required")
 	}
-	return &Accessor{doer: doer}, nil
+	return &Accessor{client: client}, nil
 }
 
 // QueryRoot fetches recent root runs for a project.
@@ -127,79 +112,55 @@ func (a *Accessor) QueryRootRuns(ctx context.Context, params QueryRootParams) ([
 		limit = 20
 	}
 
-	body := queryRunsRequest{
-		Session:   []string{params.ProjectID},
-		IsRoot:    true,
-		Limit:     limit,
-		StartTime: params.StartTime,
+	queryParams := langsmith.RunQueryParams{
+		Session: langsmith.F([]string{params.ProjectID}),
+		IsRoot:  langsmith.F(true),
+		Limit:   langsmith.F(int64(limit)),
 	}
-	bodyBytes, err := transport.EncodeJSONBody(body)
-	if err != nil {
-		return nil, fmt.Errorf("runs: encode request body: %w", err)
+	if params.StartTime != "" {
+		t, err := time.Parse(time.RFC3339, params.StartTime)
+		if err == nil {
+			queryParams.StartTime = langsmith.F(t)
+		}
 	}
 
-	req := transport.NewRequest(http.MethodPost, "/runs/query").WithBody(bodyBytes)
-	resp, err := a.doer.Do(ctx, req)
+	resp, err := a.client.Runs.Query(ctx, queryParams)
 	if err != nil {
 		return nil, fmt.Errorf("runs: query runs: %w", err)
 	}
-	if resp.StatusCode >= http.StatusBadRequest {
-		return nil, statuserr.Wrap("runs: query runs", resp.StatusCode, resp.Body)
-	}
 
-	var payload struct {
-		Runs []struct {
-			ID        string `json:"id"`
-			Name      string `json:"name"`
-			StartTime string `json:"start_time"`
-			Extra     struct {
-				Metadata struct {
-					ThreadID string `json:"thread_id"`
-				} `json:"metadata"`
-			} `json:"extra"`
-		} `json:"runs"`
-	}
-	if err := json.Unmarshal(resp.Body, &payload); err != nil {
-		return nil, fmt.Errorf("runs: decode response: %w", err)
-	}
-
-	runs := make([]RootRun, 0, len(payload.Runs))
-	for _, item := range payload.Runs {
+	runs := make([]RootRun, 0, len(resp.Runs))
+	for _, item := range resp.Runs {
+		threadID := item.ThreadID
+		startTime := ""
+		if !item.StartTime.IsZero() {
+			startTime = item.StartTime.Format(time.RFC3339)
+		}
 		runs = append(runs, RootRun{
 			ID:        item.ID,
 			Name:      item.Name,
-			StartTime: item.StartTime,
-			ThreadID:  item.Extra.Metadata.ThreadID,
+			StartTime: startTime,
+			ThreadID:  threadID,
 		})
 	}
 	return runs, nil
 }
 
-// GetRun fetches a single run by ID.
+// GetRun fetches a single run by ID via the SDK's generic endpoint support.
 func (a *Accessor) GetRun(ctx context.Context, params GetRunParams) (Run, error) {
 	if params.RunID == "" {
 		return Run{}, fmt.Errorf("runs: run id is required")
 	}
 
-	req := transport.NewRequest(
-		http.MethodGet,
-		fmt.Sprintf("/runs/%s", url.PathEscape(params.RunID)),
-	)
+	path := fmt.Sprintf("api/v1/runs/%s", url.PathEscape(params.RunID))
 	if params.IncludeMessages {
-		req = req.WithQuery("include_messages", "true")
+		path = path + "?include_messages=true"
 	}
 
-	resp, err := a.doer.Do(ctx, req)
+	var raw Run
+	err := a.client.Get(ctx, path, nil, &raw)
 	if err != nil {
 		return Run{}, fmt.Errorf("runs: get run: %w", err)
 	}
-	if resp.StatusCode >= http.StatusBadRequest {
-		return Run{}, statuserr.Wrap("runs: get run", resp.StatusCode, resp.Body)
-	}
-
-	var run Run
-	if err := json.Unmarshal(resp.Body, &run); err != nil {
-		return Run{}, fmt.Errorf("runs: decode response: %w", err)
-	}
-	return run, nil
+	return raw, nil
 }

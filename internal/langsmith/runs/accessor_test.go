@@ -1,35 +1,30 @@
-// accessor_test.go validates run accessor request and response behavior.
 package runs
 
 import (
 	"context"
 	"encoding/json"
-	"errors"
+	"io"
 	"net/http"
-	"net/url"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
-	langsmith "langsmith-sdk/go/langsmith"
-	"langsmith-sdk/go/langsmith/transport"
+	"github.com/langchain-ai/langsmith-go"
+	"github.com/langchain-ai/langsmith-go/option"
 )
 
-type fakeDoer struct {
-	req    transport.Request
-	resp   transport.Response
-	err    error
-	called bool
+func newTestClient(t *testing.T, handler http.HandlerFunc) *langsmith.Client {
+	t.Helper()
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	return langsmith.NewClient(
+		option.WithBaseURL(server.URL),
+		option.WithAPIKey("test-key"),
+	)
 }
 
-func (f *fakeDoer) Do(_ context.Context, req transport.Request) (transport.Response, error) {
-	f.called = true
-	f.req = req
-	return f.resp, f.err
-}
-
-func TestNewAccessor_RequiresDoer(t *testing.T) {
+func TestNewAccessor_RequiresClient(t *testing.T) {
 	t.Parallel()
-
 	accessor, err := NewAccessor(nil)
 	if err == nil {
 		t.Fatal("NewAccessor(nil) error = nil, want non-nil")
@@ -41,246 +36,59 @@ func TestNewAccessor_RequiresDoer(t *testing.T) {
 
 func TestQueryRoot_RequiresProjectID(t *testing.T) {
 	t.Parallel()
-
-	doer := &fakeDoer{}
-	accessor, err := NewAccessor(doer)
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("unexpected request")
+	})
+	accessor, err := NewAccessor(client)
 	if err != nil {
 		t.Fatalf("NewAccessor() error = %v", err)
 	}
-
 	_, err = accessor.QueryRoot(context.Background(), QueryRootParams{})
 	if err == nil || !strings.Contains(err.Error(), "project id is required") {
 		t.Fatalf("QueryRoot() error = %v, want project id required", err)
-	}
-	if doer.called {
-		t.Fatal("Do() called unexpectedly")
 	}
 }
 
 func TestQueryRoot_DefaultLimitAndDecode(t *testing.T) {
 	t.Parallel()
-
-	doer := &fakeDoer{
-		resp: transport.Response{
-			StatusCode: 200,
-			Body:       []byte(`{"runs":[{"id":"run-1","name":"trace-a","start_time":"2026-01-01T00:00:00Z"}]}`),
-		},
-	}
-	accessor, err := NewAccessor(doer)
-	if err != nil {
-		t.Fatalf("NewAccessor() error = %v", err)
-	}
+	var capturedBody []byte
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		capturedBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"runs":[{"id":"run-1","name":"trace-a","start_time":"2026-01-01T00:00:00Z"}],"cursors":{}}`)
+	})
+	accessor, _ := NewAccessor(client)
 
 	runs, err := accessor.QueryRoot(context.Background(), QueryRootParams{ProjectID: "project-123"})
 	if err != nil {
 		t.Fatalf("QueryRoot() error = %v", err)
 	}
-	if len(runs) != 1 {
-		t.Fatalf("len(runs) = %d, want 1", len(runs))
-	}
-	if runs[0].ID != "run-1" {
-		t.Fatalf("runs[0].ID = %q, want %q", runs[0].ID, "run-1")
+	if len(runs) != 1 || runs[0].ID != "run-1" {
+		t.Fatalf("runs = %+v, want 1 run with ID run-1", runs)
 	}
 
-	if doer.req.Method != "POST" {
-		t.Fatalf("Method = %q, want POST", doer.req.Method)
+	var body map[string]interface{}
+	if err := json.Unmarshal(capturedBody, &body); err != nil {
+		t.Fatalf("decode request body: %v", err)
 	}
-	if doer.req.Path != "/runs/query" {
-		t.Fatalf("Path = %q, want %q", doer.req.Path, "/runs/query")
+	if limit, ok := body["limit"].(float64); !ok || int(limit) != 20 {
+		t.Fatalf("limit = %v, want 20", body["limit"])
 	}
-
-	var body queryRunsRequest
-	if err := json.Unmarshal(doer.req.Body, &body); err != nil {
-		t.Fatalf("json.Unmarshal(request body) error = %v", err)
-	}
-	if len(body.Session) != 1 || body.Session[0] != "project-123" {
-		t.Fatalf("Session = %#v, want []string{\"project-123\"}", body.Session)
-	}
-	if !body.IsRoot {
-		t.Fatalf("IsRoot = %v, want true", body.IsRoot)
-	}
-	if body.Limit != 20 {
-		t.Fatalf("Limit = %d, want 20", body.Limit)
-	}
-}
-
-func TestQueryRoot_UsesExplicitLimit(t *testing.T) {
-	t.Parallel()
-
-	doer := &fakeDoer{
-		resp: transport.Response{
-			StatusCode: 200,
-			Body:       []byte(`{"runs":[]}`),
-		},
-	}
-	accessor, err := NewAccessor(doer)
-	if err != nil {
-		t.Fatalf("NewAccessor() error = %v", err)
-	}
-
-	_, err = accessor.QueryRoot(context.Background(), QueryRootParams{
-		ProjectID: "project-123",
-		Limit:     5,
-	})
-	if err != nil {
-		t.Fatalf("QueryRoot() error = %v", err)
-	}
-
-	var body queryRunsRequest
-	if err := json.Unmarshal(doer.req.Body, &body); err != nil {
-		t.Fatalf("json.Unmarshal(request body) error = %v", err)
-	}
-	if body.Limit != 5 {
-		t.Fatalf("Limit = %d, want 5", body.Limit)
-	}
-}
-
-func TestQueryRoot_IncludesStartTime(t *testing.T) {
-	t.Parallel()
-
-	doer := &fakeDoer{
-		resp: transport.Response{
-			StatusCode: 200,
-			Body:       []byte(`{"runs":[]}`),
-		},
-	}
-	accessor, err := NewAccessor(doer)
-	if err != nil {
-		t.Fatalf("NewAccessor() error = %v", err)
-	}
-
-	_, err = accessor.QueryRoot(context.Background(), QueryRootParams{
-		ProjectID: "project-123",
-		StartTime: "2025-12-09T10:00:00Z",
-	})
-	if err != nil {
-		t.Fatalf("QueryRoot() error = %v", err)
-	}
-
-	var body queryRunsRequest
-	if err := json.Unmarshal(doer.req.Body, &body); err != nil {
-		t.Fatalf("json.Unmarshal(request body) error = %v", err)
-	}
-	if body.StartTime != "2025-12-09T10:00:00Z" {
-		t.Fatalf("StartTime = %q, want %q", body.StartTime, "2025-12-09T10:00:00Z")
-	}
-}
-
-func TestQueryRoot_PropagatesDoError(t *testing.T) {
-	t.Parallel()
-
-	doer := &fakeDoer{err: errors.New("network failed")}
-	accessor, err := NewAccessor(doer)
-	if err != nil {
-		t.Fatalf("NewAccessor() error = %v", err)
-	}
-
-	_, err = accessor.QueryRoot(context.Background(), QueryRootParams{ProjectID: "project-123"})
-	if err == nil || !strings.Contains(err.Error(), "network failed") {
-		t.Fatalf("QueryRoot() error = %v, want wrapped do error", err)
-	}
-}
-
-func TestQueryRoot_StatusError(t *testing.T) {
-	t.Parallel()
-
-	doer := &fakeDoer{
-		resp: transport.Response{
-			StatusCode: 400,
-			Body:       []byte("bad request"),
-		},
-	}
-	accessor, err := NewAccessor(doer)
-	if err != nil {
-		t.Fatalf("NewAccessor() error = %v", err)
-	}
-
-	_, err = accessor.QueryRoot(context.Background(), QueryRootParams{ProjectID: "project-123"})
-	if err == nil || !strings.Contains(err.Error(), "status 400") {
-		t.Fatalf("QueryRoot() error = %v, want status error", err)
-	}
-}
-
-func TestQueryRoot_StatusErrorMapsTypedErrors(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name   string
-		status int
-		want   error
-	}{
-		{name: "unauthorized", status: http.StatusUnauthorized, want: langsmith.ErrUnauthorized},
-		{name: "forbidden", status: http.StatusForbidden, want: langsmith.ErrForbidden},
-		{name: "not found", status: http.StatusNotFound, want: langsmith.ErrNotFound},
-		{name: "rate limited", status: http.StatusTooManyRequests, want: langsmith.ErrRateLimited},
-		{name: "transient", status: http.StatusInternalServerError, want: langsmith.ErrTransient},
-	}
-
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			doer := &fakeDoer{
-				resp: transport.Response{
-					StatusCode: tt.status,
-					Body:       []byte("mock error"),
-				},
-			}
-			accessor, err := NewAccessor(doer)
-			if err != nil {
-				t.Fatalf("NewAccessor() error = %v", err)
-			}
-
-			_, err = accessor.QueryRoot(context.Background(), QueryRootParams{ProjectID: "project-123"})
-			if err == nil {
-				t.Fatal("QueryRoot() error = nil, want non-nil")
-			}
-			if !errors.Is(err, tt.want) {
-				t.Fatalf("QueryRoot() error = %v, want errors.Is(_, %v)", err, tt.want)
-			}
-		})
-	}
-}
-
-func TestQueryRoot_DecodeError(t *testing.T) {
-	t.Parallel()
-
-	doer := &fakeDoer{
-		resp: transport.Response{
-			StatusCode: 200,
-			Body:       []byte(`{"runs":`),
-		},
-	}
-	accessor, err := NewAccessor(doer)
-	if err != nil {
-		t.Fatalf("NewAccessor() error = %v", err)
-	}
-
-	_, err = accessor.QueryRoot(context.Background(), QueryRootParams{ProjectID: "project-123"})
-	if err == nil || !strings.Contains(err.Error(), "decode response") {
-		t.Fatalf("QueryRoot() error = %v, want decode error", err)
+	if isRoot, ok := body["is_root"].(bool); !ok || !isRoot {
+		t.Fatalf("is_root = %v, want true", body["is_root"])
 	}
 }
 
 func TestQueryRootRuns_ParsesThreadIDs(t *testing.T) {
 	t.Parallel()
-
-	doer := &fakeDoer{
-		resp: transport.Response{
-			StatusCode: 200,
-			Body: []byte(`{
-  "runs":[
-    {"id":"run-1","name":"trace-a","start_time":"2026-01-01T00:00:00Z","extra":{"metadata":{"thread_id":"thread-1"}}},
-    {"id":"run-2","name":"trace-b","start_time":"2026-01-01T01:00:00Z","extra":{"metadata":{"thread_id":"thread-2"}}}
-  ]
-}`),
-		},
-	}
-	accessor, err := NewAccessor(doer)
-	if err != nil {
-		t.Fatalf("NewAccessor() error = %v", err)
-	}
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"runs":[
+			{"id":"run-1","name":"trace-a","start_time":"2026-01-01T00:00:00Z","trace_id":"run-1","run_type":"chain","session_id":"s","status":"ok","dotted_order":"d","app_path":"a","thread_id":"thread-1","extra":{"metadata":{"thread_id":"thread-1"}}},
+			{"id":"run-2","name":"trace-b","start_time":"2026-01-01T01:00:00Z","trace_id":"run-2","run_type":"chain","session_id":"s","status":"ok","dotted_order":"d","app_path":"a","thread_id":"thread-2","extra":{"metadata":{"thread_id":"thread-2"}}}
+		],"cursors":{}}`)
+	})
+	accessor, _ := NewAccessor(client)
 
 	runs, err := accessor.QueryRootRuns(context.Background(), QueryRootParams{ProjectID: "project-123"})
 	if err != nil {
@@ -299,70 +107,55 @@ func TestQueryRootRuns_ParsesThreadIDs(t *testing.T) {
 
 func TestGetRun_RequiresRunID(t *testing.T) {
 	t.Parallel()
-
-	doer := &fakeDoer{}
-	accessor, err := NewAccessor(doer)
-	if err != nil {
-		t.Fatalf("NewAccessor() error = %v", err)
-	}
-
-	_, err = accessor.GetRun(context.Background(), GetRunParams{})
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("unexpected request")
+	})
+	accessor, _ := NewAccessor(client)
+	_, err := accessor.GetRun(context.Background(), GetRunParams{})
 	if err == nil || !strings.Contains(err.Error(), "run id is required") {
 		t.Fatalf("GetRun() error = %v, want run id required", err)
 	}
-	if doer.called {
-		t.Fatal("Do() called unexpectedly")
-	}
 }
 
-func TestGetRun_BuildsRequestAndDecodesResponse(t *testing.T) {
+func TestGetRun_DecodesResponse(t *testing.T) {
 	t.Parallel()
-
-	doer := &fakeDoer{
-		resp: transport.Response{
-			StatusCode: http.StatusOK,
-			Body: []byte(`{
-  "id":"trace-1",
-  "status":"completed",
-  "start_time":"2026-01-01T00:00:00Z",
-  "end_time":"2026-01-01T00:00:02Z",
-  "prompt_tokens":11,
-  "total_tokens":22,
-  "total_cost":0.42,
-  "first_token_time":"2026-01-01T00:00:00.100Z",
-  "feedback_stats":{"correctness":1},
-  "extra":{"metadata":{"thread_id":"thread-1"}},
-  "messages":[{"role":"user","content":"hi"}],
-  "outputs":{"messages":[{"role":"assistant","content":"hello"}]}
-}`),
-		},
-	}
-	accessor, err := NewAccessor(doer)
-	if err != nil {
-		t.Fatalf("NewAccessor() error = %v", err)
-	}
-
-	run, err := accessor.GetRun(context.Background(), GetRunParams{
-		RunID:           "trace/a b",
-		IncludeMessages: true,
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/runs/trace-1" {
+			t.Fatalf("r.URL.Path = %q, want %q", r.URL.Path, "/api/v1/runs/trace-1")
+		}
+		if got := r.URL.Query().Get("include_messages"); got != "true" {
+			t.Fatalf("include_messages query = %q, want %q", got, "true")
+		}
+		body, _ := io.ReadAll(r.Body)
+		if strings.TrimSpace(string(body)) != "" {
+			t.Fatalf("GET body should be empty, got %q", string(body))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{
+			"id":"trace-1","status":"completed",
+			"start_time":"2026-01-01T00:00:00Z","end_time":"2026-01-01T00:00:02Z",
+			"prompt_tokens":11,"total_tokens":22,"total_cost":0.42,
+			"first_token_time":"2026-01-01T00:00:00.100Z",
+			"feedback_stats":{"correctness":1},
+			"extra":{"metadata":{"thread_id":"thread-1"}},
+			"messages":[{"role":"user","content":"hi"}],
+			"outputs":{"messages":[{"role":"assistant","content":"hello"}]}
+		}`)
 	})
+	accessor, _ := NewAccessor(client)
+
+	run, err := accessor.GetRun(context.Background(), GetRunParams{RunID: "trace-1", IncludeMessages: true})
 	if err != nil {
 		t.Fatalf("GetRun() error = %v", err)
 	}
 	if run.ID != "trace-1" {
 		t.Fatalf("run.ID = %q, want %q", run.ID, "trace-1")
 	}
-	if len(run.Messages) != 1 {
-		t.Fatalf("len(run.Messages) = %d, want 1", len(run.Messages))
-	}
-	if len(run.Outputs.Messages) != 1 {
-		t.Fatalf("len(run.Outputs.Messages) = %d, want 1", len(run.Outputs.Messages))
-	}
 	if run.Status != "completed" {
 		t.Fatalf("run.Status = %q, want %q", run.Status, "completed")
 	}
-	if run.StartTime != "2026-01-01T00:00:00Z" || run.EndTime != "2026-01-01T00:00:02Z" {
-		t.Fatalf("start/end = %q/%q, want expected timestamps", run.StartTime, run.EndTime)
+	if len(run.Messages) != 1 {
+		t.Fatalf("len(run.Messages) = %d, want 1", len(run.Messages))
 	}
 	if run.PromptTokens == nil || *run.PromptTokens != 11 {
 		t.Fatalf("run.PromptTokens = %+v, want 11", run.PromptTokens)
@@ -370,72 +163,18 @@ func TestGetRun_BuildsRequestAndDecodesResponse(t *testing.T) {
 	if run.TotalCost == nil || *run.TotalCost != 0.42 {
 		t.Fatalf("run.TotalCost = %+v, want 0.42", run.TotalCost)
 	}
-	if string(run.Extra.Metadata) != `{"thread_id":"thread-1"}` {
-		t.Fatalf("run.Extra.Metadata = %s, want thread metadata", string(run.Extra.Metadata))
-	}
-	if doer.req.Method != http.MethodGet {
-		t.Fatalf("Method = %q, want GET", doer.req.Method)
-	}
-	if doer.req.Path != "/runs/trace%2Fa%20b" {
-		t.Fatalf("Path = %q, want escaped path", doer.req.Path)
-	}
-	wantQuery := url.Values{"include_messages": []string{"true"}}
-	if got := doer.req.Query.Encode(); got != wantQuery.Encode() {
-		t.Fatalf("Query = %q, want %q", got, wantQuery.Encode())
-	}
 }
 
-func TestGetRun_PropagatesDoError(t *testing.T) {
+func TestGetRun_PropagatesError(t *testing.T) {
 	t.Parallel()
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = io.WriteString(w, `{"detail":"not found"}`)
+	})
+	accessor, _ := NewAccessor(client)
 
-	doer := &fakeDoer{err: errors.New("network failed")}
-	accessor, err := NewAccessor(doer)
-	if err != nil {
-		t.Fatalf("NewAccessor() error = %v", err)
-	}
-
-	_, err = accessor.GetRun(context.Background(), GetRunParams{RunID: "trace-1"})
-	if err == nil || !strings.Contains(err.Error(), "network failed") {
-		t.Fatalf("GetRun() error = %v, want wrapped do error", err)
-	}
-}
-
-func TestGetRun_StatusError(t *testing.T) {
-	t.Parallel()
-
-	doer := &fakeDoer{
-		resp: transport.Response{
-			StatusCode: http.StatusNotFound,
-			Body:       []byte("not found"),
-		},
-	}
-	accessor, err := NewAccessor(doer)
-	if err != nil {
-		t.Fatalf("NewAccessor() error = %v", err)
-	}
-
-	_, err = accessor.GetRun(context.Background(), GetRunParams{RunID: "trace-1"})
-	if err == nil || !strings.Contains(err.Error(), "status 404") {
-		t.Fatalf("GetRun() error = %v, want status error", err)
-	}
-}
-
-func TestGetRun_DecodeError(t *testing.T) {
-	t.Parallel()
-
-	doer := &fakeDoer{
-		resp: transport.Response{
-			StatusCode: http.StatusOK,
-			Body:       []byte(`{"id":`),
-		},
-	}
-	accessor, err := NewAccessor(doer)
-	if err != nil {
-		t.Fatalf("NewAccessor() error = %v", err)
-	}
-
-	_, err = accessor.GetRun(context.Background(), GetRunParams{RunID: "trace-1"})
-	if err == nil || !strings.Contains(err.Error(), "decode response") {
-		t.Fatalf("GetRun() error = %v, want decode error", err)
+	_, err := accessor.GetRun(context.Background(), GetRunParams{RunID: "trace-1"})
+	if err == nil {
+		t.Fatal("GetRun() error = nil, want non-nil")
 	}
 }

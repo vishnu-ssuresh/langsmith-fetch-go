@@ -4,7 +4,8 @@ package cmd
 import (
 	"strings"
 
-	langsmith "langsmith-sdk/go/langsmith"
+	"github.com/langchain-ai/langsmith-go"
+	"github.com/langchain-ai/langsmith-go/option"
 
 	"langsmith-fetch-go/internal/config"
 	coresingle "langsmith-fetch-go/internal/core/single"
@@ -17,9 +18,6 @@ import (
 )
 
 // Deps contains root command dependencies.
-//
-// Keeping these as function fields makes command code easy to unit test
-// without real process environment access.
 type Deps struct {
 	LoadConfig          func() config.Values
 	NewTraceGetter      func(config.Values) (traceGetter, error)
@@ -36,10 +34,7 @@ func NewDeps() Deps {
 	return Deps{
 		LoadConfig: config.Load,
 		NewTraceGetter: func(cfg config.Values) (traceGetter, error) {
-			client, err := newSDKClient(cfg)
-			if err != nil {
-				return nil, err
-			}
+			client := newSDKClient(cfg)
 			runsAccessor, err := langsmithruns.NewAccessor(client)
 			if err != nil {
 				return nil, err
@@ -47,17 +42,11 @@ func NewDeps() Deps {
 			return coresingle.NewTraceService(runsAccessor)
 		},
 		NewFeedbackAccessor: func(cfg config.Values) (traceFeedbackAccessor, error) {
-			client, err := newSDKClient(cfg)
-			if err != nil {
-				return nil, err
-			}
+			client := newSDKClient(cfg)
 			return langsmithfeedback.NewAccessor(client)
 		},
 		NewTracesLister: func(cfg config.Values) (tracesLister, error) {
-			client, err := newSDKClient(cfg)
-			if err != nil {
-				return nil, err
-			}
+			client := newSDKClient(cfg)
 			runsAccessor, err := langsmithruns.NewAccessor(client)
 			if err != nil {
 				return nil, err
@@ -69,10 +58,7 @@ func NewDeps() Deps {
 			return traces.New(runsAccessor, feedbackAccessor)
 		},
 		NewThreadGetter: func(cfg config.Values) (threadGetter, error) {
-			client, err := newSDKClient(cfg)
-			if err != nil {
-				return nil, err
-			}
+			client := newSDKClient(cfg)
 			threadsAccessor, err := langsmiththreads.NewAccessor(client)
 			if err != nil {
 				return nil, err
@@ -80,10 +66,7 @@ func NewDeps() Deps {
 			return coresingle.NewThreadService(threadsAccessor)
 		},
 		NewThreadsLister: func(cfg config.Values) (threadsLister, error) {
-			client, err := newSDKClient(cfg)
-			if err != nil {
-				return nil, err
-			}
+			client := newSDKClient(cfg)
 			runsAccessor, err := langsmithruns.NewAccessor(client)
 			if err != nil {
 				return nil, err
@@ -95,10 +78,7 @@ func NewDeps() Deps {
 			return corethreads.NewLister(runsAccessor, threadsAccessor)
 		},
 		NewProjectResolver: func(cfg config.Values) (projectResolver, error) {
-			client, err := newSDKClient(cfg)
-			if err != nil {
-				return nil, err
-			}
+			client := newSDKClient(cfg)
 			return langsmithprojects.NewAccessor(client)
 		},
 		CacheProjectUUID: cacheProjectUUIDToConfigFile,
@@ -133,12 +113,18 @@ func (d Deps) withDefaults() Deps {
 	return d
 }
 
-func newSDKClient(cfg config.Values) (*langsmith.Client, error) {
-	return langsmith.NewClient(langsmith.ClientOptions{
-		APIKey:      cfg.APIKey,
-		WorkspaceID: cfg.WorkspaceID,
-		Endpoint:    cfg.Endpoint,
-	})
+func newSDKClient(cfg config.Values) *langsmith.Client {
+	opts := []option.RequestOption{}
+	if cfg.APIKey != "" {
+		opts = append(opts, option.WithAPIKey(cfg.APIKey))
+	}
+	if cfg.Endpoint != "" {
+		opts = append(opts, option.WithBaseURL(cfg.Endpoint))
+	}
+	if cfg.WorkspaceID != "" {
+		opts = append(opts, option.WithTenantID(cfg.WorkspaceID))
+	}
+	return langsmith.NewClient(opts...)
 }
 
 func cacheProjectUUIDToConfigFile(projectName string, projectUUID string) error {
