@@ -4,6 +4,8 @@
 
 Go CLI for fetching LangSmith traces and threads with deterministic output, strong tests, and SDK-backed auth/transport behavior.
 
+Originally built as a personal project to learn Go while shipping a production-style CLI.
+
 ## Highlights
 
 - Focused CLI commands: `trace`, `traces`, `thread`, `threads`, `config`
@@ -34,7 +36,6 @@ Go CLI for fetching LangSmith traces and threads with deterministic output, stro
 ## Project Status
 
 `langsmith-fetch-go` is an actively developed Go migration of the Python `langsmith-fetch` tool.
-It also started as a personal project to learn Go by building a production-style CLI.
 
 Current capabilities:
 
