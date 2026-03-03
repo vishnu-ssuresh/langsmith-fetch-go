@@ -20,6 +20,7 @@ Go CLI for fetching LangSmith traces and threads with deterministic output, stro
 - [Requirements](#requirements)
 - [Repository Layout](#repository-layout)
 - [Quick Start](#quick-start)
+- [Setup Notes](#setup-notes)
 - [Authentication And Configuration](#authentication-and-configuration)
 - [Command Reference](#command-reference)
 - [Output And File Modes](#output-and-file-modes)
@@ -33,6 +34,7 @@ Go CLI for fetching LangSmith traces and threads with deterministic output, stro
 ## Project Status
 
 `langsmith-fetch-go` is an actively developed Go migration of the Python `langsmith-fetch` tool.
+It also started as a personal project to learn Go by building a production-style CLI.
 
 Current capabilities:
 
@@ -104,6 +106,66 @@ Or using config:
 
 ```bash
 ./bin/langsmith-fetch trace <trace-id> --format pretty
+```
+
+## Setup Notes
+
+### Using a custom `langsmith-sdk/go` checkout
+
+This repo depends on `langsmith-sdk/go` via a local replace.
+Default in `go.mod`:
+
+```go
+replace langsmith-sdk/go => ../langsmith-sdk/go
+```
+
+If your SDK checkout is elsewhere (or you are testing a custom SDK branch), update the replace target:
+
+```bash
+go mod edit -replace=langsmith-sdk/go=/absolute/path/to/langsmith-sdk/go
+go mod tidy
+```
+
+Verify the module resolution path:
+
+```bash
+go list -m -f '{{.Path}} => {{.Dir}}' langsmith-sdk/go
+```
+
+### Environment compatibility notes
+
+`langsmith-fetch-go` reads:
+
+- `LANGSMITH_ENDPOINT` (or `LANGCHAIN_ENDPOINT`)
+
+Some repos use `LANGSMITH_HOST_API_URL` instead. If your env file uses that key, map it explicitly:
+
+```bash
+export LANGSMITH_ENDPOINT="${LANGSMITH_HOST_API_URL}"
+```
+
+If you want to force default cloud behavior, unset endpoint overrides:
+
+```bash
+unset LANGSMITH_ENDPOINT LANGCHAIN_ENDPOINT
+```
+
+### Smoke test with an existing `.env` file
+
+Example flow when loading env vars from a sibling repo:
+
+```bash
+set -a
+source ../ai-sdr/.env
+set +a
+
+# required when project is not in the env file
+export LANGSMITH_PROJECT="gtm-agent"
+
+# optional: use endpoint from host-url style env var
+# export LANGSMITH_ENDPOINT="${LANGSMITH_HOST_API_URL}"
+
+go run ./cmd/langsmith-fetch traces --limit 3 --format pretty --no-progress
 ```
 
 ## Authentication And Configuration
@@ -384,4 +446,11 @@ If build fails resolving `langsmith-sdk/go`, ensure the sibling checkout exists:
 
 ```text
 ../langsmith-sdk/go
+```
+
+Or repoint the replace target to your custom SDK checkout:
+
+```bash
+go mod edit -replace=langsmith-sdk/go=/absolute/path/to/langsmith-sdk/go
+go mod tidy
 ```
