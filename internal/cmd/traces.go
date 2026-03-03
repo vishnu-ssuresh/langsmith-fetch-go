@@ -4,7 +4,6 @@ package cmd
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -94,19 +93,17 @@ func runTraces(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cfg
 		return err
 	}
 
-	if opts.limit <= 0 {
-		return errors.New("--limit must be > 0")
+	if err := validatePositiveIntFlag("limit", opts.limit); err != nil {
+		return err
 	}
-	if opts.maxConcurrent <= 0 {
-		return errors.New("--max-concurrent must be > 0")
+	if err := validatePositiveIntFlag("max-concurrent", opts.maxConcurrent); err != nil {
+		return err
 	}
-	if opts.outputFile != "" && opts.outputDir != "" {
-		return errors.New("--file and --dir are mutually exclusive")
+	if err := validateMutuallyExclusiveStringFlags("file", opts.outputFile, "dir", opts.outputDir); err != nil {
+		return err
 	}
-	switch opts.format {
-	case "pretty", "json", "raw":
-	default:
-		return fmt.Errorf("--format must be one of pretty|json|raw, got %q", opts.format)
+	if err := validateOutputFormat(opts.format); err != nil {
+		return err
 	}
 
 	projectID, err := resolveProjectID(opts.projectID, cfg, deps)

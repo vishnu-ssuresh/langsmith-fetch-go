@@ -5,11 +5,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
-	"strings"
 	"time"
 
 	"langsmith-fetch-go/internal/config"
@@ -72,12 +70,7 @@ func runTrace(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cfg 
 	fs.SetOutput(stderr)
 
 	var opts traceOptions
-	var leadingTraceID string
-	parseArgs := args
-	if len(parseArgs) > 0 && !strings.HasPrefix(parseArgs[0], "-") {
-		leadingTraceID = parseArgs[0]
-		parseArgs = parseArgs[1:]
-	}
+	leadingTraceID, parseArgs := popLeadingPositionalArg(args)
 	fs.StringVar(&opts.traceID, "trace-id", "", "Trace ID")
 	fs.StringVar(
 		&opts.format,
@@ -102,26 +95,13 @@ func runTrace(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cfg 
 		return err
 	}
 
-	rest := fs.Args()
-	if opts.traceID == "" {
-		if leadingTraceID != "" {
-			opts.traceID = leadingTraceID
-		} else if len(rest) > 0 {
-			opts.traceID = rest[0]
-			rest = rest[1:]
-		}
+	traceID, err := resolveRequiredIDFromArgs(opts.traceID, leadingTraceID, fs.Args(), "trace-id")
+	if err != nil {
+		return err
 	}
-	if len(rest) > 0 {
-		return fmt.Errorf("unexpected positional arguments: %v", rest)
-	}
-
-	if opts.traceID == "" {
-		return errors.New("--trace-id is required")
-	}
-	switch opts.format {
-	case "pretty", "json", "raw":
-	default:
-		return fmt.Errorf("--format must be one of pretty|json|raw, got %q", opts.format)
+	opts.traceID = traceID
+	if err := validateOutputFormat(opts.format); err != nil {
+		return err
 	}
 
 	getter, err := deps.NewTraceGetter(cfg)

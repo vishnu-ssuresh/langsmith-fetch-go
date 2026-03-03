@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+
+	"langsmith-fetch-go/internal/config"
 )
 
 const missingAPIKeyMessage = "LANGSMITH_API_KEY (or LANGCHAIN_API_KEY) is required"
@@ -23,34 +25,33 @@ func Execute(args []string, stdout io.Writer, stderr io.Writer, deps Deps) error
 		printRootUsage(stdout)
 		return nil
 	case "config":
-		return runConfig(args[1:], stdout, stderr, deps, deps.LoadConfig())
+		return runConfiguredRootCommand(args[1:], stdout, stderr, deps, false, runConfig)
 	case "traces":
-		cfg := deps.LoadConfig()
-		if cfg.APIKey == "" {
-			return errors.New(missingAPIKeyMessage)
-		}
-		return runTraces(args[1:], stdout, stderr, deps, cfg)
+		return runConfiguredRootCommand(args[1:], stdout, stderr, deps, true, runTraces)
 	case "trace":
-		cfg := deps.LoadConfig()
-		if cfg.APIKey == "" {
-			return errors.New(missingAPIKeyMessage)
-		}
-		return runTrace(args[1:], stdout, stderr, deps, cfg)
+		return runConfiguredRootCommand(args[1:], stdout, stderr, deps, true, runTrace)
 	case "thread":
-		cfg := deps.LoadConfig()
-		if cfg.APIKey == "" {
-			return errors.New(missingAPIKeyMessage)
-		}
-		return runThread(args[1:], stdout, stderr, deps, cfg)
+		return runConfiguredRootCommand(args[1:], stdout, stderr, deps, true, runThread)
 	case "threads":
-		cfg := deps.LoadConfig()
-		if cfg.APIKey == "" {
-			return errors.New(missingAPIKeyMessage)
-		}
-		return runThreads(args[1:], stdout, stderr, deps, cfg)
+		return runConfiguredRootCommand(args[1:], stdout, stderr, deps, true, runThreads)
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
+}
+
+func runConfiguredRootCommand(
+	args []string,
+	stdout io.Writer,
+	stderr io.Writer,
+	deps Deps,
+	requireAPIKey bool,
+	run func([]string, io.Writer, io.Writer, Deps, config.Values) error,
+) error {
+	cfg := deps.LoadConfig()
+	if requireAPIKey && cfg.APIKey == "" {
+		return errors.New(missingAPIKeyMessage)
+	}
+	return run(args, stdout, stderr, deps, cfg)
 }
 
 func printRootUsage(w io.Writer) {

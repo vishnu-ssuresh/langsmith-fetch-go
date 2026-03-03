@@ -4,11 +4,9 @@ package cmd
 import (
 	"bytes"
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
-	"strings"
 
 	"langsmith-fetch-go/internal/config"
 	coresingle "langsmith-fetch-go/internal/core/single"
@@ -32,12 +30,7 @@ func runThread(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cfg
 	fs.SetOutput(stderr)
 
 	var opts threadOptions
-	var leadingThreadID string
-	parseArgs := args
-	if len(parseArgs) > 0 && !strings.HasPrefix(parseArgs[0], "-") {
-		leadingThreadID = parseArgs[0]
-		parseArgs = parseArgs[1:]
-	}
+	leadingThreadID, parseArgs := popLeadingPositionalArg(args)
 	fs.StringVar(&opts.projectID, "project-id", "", "Project UUID")
 	fs.StringVar(&opts.projectID, "project-uuid", "", "Project UUID")
 	fs.StringVar(&opts.threadID, "thread-id", "", "Thread ID")
@@ -52,26 +45,13 @@ func runThread(args []string, stdout io.Writer, stderr io.Writer, deps Deps, cfg
 		return err
 	}
 
-	rest := fs.Args()
-	if opts.threadID == "" {
-		if leadingThreadID != "" {
-			opts.threadID = leadingThreadID
-		} else if len(rest) > 0 {
-			opts.threadID = rest[0]
-			rest = rest[1:]
-		}
+	threadID, err := resolveRequiredIDFromArgs(opts.threadID, leadingThreadID, fs.Args(), "thread-id")
+	if err != nil {
+		return err
 	}
-	if len(rest) > 0 {
-		return fmt.Errorf("unexpected positional arguments: %v", rest)
-	}
-
-	if opts.threadID == "" {
-		return errors.New("--thread-id is required")
-	}
-	switch opts.format {
-	case "pretty", "json", "raw":
-	default:
-		return fmt.Errorf("--format must be one of pretty|json|raw, got %q", opts.format)
+	opts.threadID = threadID
+	if err := validateOutputFormat(opts.format); err != nil {
+		return err
 	}
 
 	projectID, err := resolveProjectID(opts.projectID, cfg, deps)
